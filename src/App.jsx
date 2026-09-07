@@ -88,23 +88,24 @@ export default function App() {
   const [view3D, setView3D] = useState(false);
   const [activeTab, setActiveTab] = useState("DASHBOARD");
   const [showFieldView, setShowFieldView] = useState(false);
+
   const handleFieldIncident = (incident) => {
-  const newSector = {
-    id: incident.id,
-    name: incident.name,
-    state: "Ground Alert",
-    lat: incident.lat,
-    lng: incident.lng,
-    baseSusceptibility: incident.severity === "CRITICAL" ? 95 : 70,
-    slope: 38,
-    elevation: 1600,
-    road: "Local Access Link",
-    roadStatus: "CLOSED"
+    const newSector = {
+      id: incident.id,
+      name: incident.name,
+      state: "Ground Alert",
+      lat: incident.lat,
+      lng: incident.lng,
+      baseSusceptibility: incident.severity === "CRITICAL" ? 95 : 70,
+      slope: 38,
+      elevation: 1600,
+      road: "Local Access Link",
+      roadStatus: "CLOSED"
+    };
+    REGIONS_DATA.unshift(newSector);
+    setSelectedRegion(newSector);
+    speakNotice(`Urgent ground incident submitted for ${incident.name}`);
   };
-  REGIONS_DATA.unshift(newSector);
-  setSelectedRegion(newSector);
-  speakNotice(`Urgent ground incident submitted for ${incident.name}`);
-};
 
   // Dynamic Risk Formula
   const calculatedRisk = Math.min(
@@ -132,6 +133,7 @@ export default function App() {
       window.speechSynthesis.speak(utterance);
     }
   };
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#070d18] text-slate-200 font-sans text-xs select-none">
       {showFieldView && (
@@ -140,7 +142,8 @@ export default function App() {
           onReportSubmitted={handleFieldIncident} 
         />
       )}
-      {/* 1. LEFT NARROW NAVIGATION BAR (from screenshot) */}
+
+      {/* 1. LEFT NARROW NAVIGATION BAR */}
       <aside className="w-56 bg-[#0a1120] border-r border-slate-800 flex flex-col justify-between p-3 shrink-0">
         <div>
           {/* Brand Header */}
@@ -194,7 +197,7 @@ export default function App() {
         </div>
       </aside>
 
-      {/* 2. MAIN CENTER & RIGHT MISSION CONTROL AREA */}
+      {/* 2. MAIN MISSION CONTROL AREA */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         
         {/* TOP STATUS BAR & KPI STAT CARDS */}
@@ -206,7 +209,7 @@ export default function App() {
             <span className="text-slate-400 text-[11px]">Multiple active landslides detected in Northeast sector</span>
           </div>
 
-          {/* KPI CARDS (23, 47, 68, 12 from image) */}
+          {/* KPI CARDS */}
           <div className="flex items-center gap-2">
             <div className="bg-[#0f1a2e] border border-red-900/50 px-3 py-1.5 rounded-lg text-center min-w-[75px]">
               <p className="text-sm font-black text-red-500">23</p>
@@ -225,18 +228,18 @@ export default function App() {
               <p className="text-[9px] text-slate-400 uppercase font-semibold">Safe Areas</p>
             </div>
             <button
-  onClick={() => setShowFieldView(true)}
-  className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1.5 transition"
->
-  <MapPin className="w-3 h-3" /> Field App (GPS)
-</button>
+              onClick={() => setShowFieldView(true)}
+              className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1.5 transition ml-1"
+            >
+              <MapPin className="w-3 h-3" /> Field App (GPS)
+            </button>
           </div>
         </div>
 
         {/* WORKSPACE GRID */}
         <div className="flex-1 p-3 grid grid-cols-12 gap-3 min-h-0">
           
-          {/* COLUMN 1 (5 cols): Balanced Map & 3D Topographic View */}
+          {/* COLUMN 1 (5 cols): Map & 3D Topographic View */}
           <div className="col-span-5 flex flex-col gap-3">
             <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col">
               <div className="flex items-center justify-between mb-2">
@@ -245,7 +248,7 @@ export default function App() {
                   <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px]">Risk Overview Map</span>
                 </div>
                 
-                {/* 3D Wireframe / 2D GIS Toggle */}
+                {/* 3D / 2D GIS Toggle */}
                 <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => setView3D(!view3D)}
@@ -267,7 +270,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* MAP / 3D VIEWPORT CONTAINER */}
+              {/* MAP CONTAINER */}
               <div className="relative flex-1 rounded-lg overflow-hidden border border-slate-800 bg-[#050912] min-h-[260px]">
                 {view3D ? (
                   <Terrain3D riskScore={calculatedRisk} slopeAngle={selectedRegion.slope} />
@@ -308,7 +311,7 @@ export default function App() {
                   </MapContainer>
                 )}
 
-                {/* Floating Map Legend Overlay */}
+                {/* Floating Map Legend */}
                 <div className="absolute top-2 left-2 bg-[#0a1222]/85 backdrop-blur border border-slate-700/80 p-2 rounded text-[10px] pointer-events-none z-[400] space-y-1">
                   <p className="font-bold text-slate-300">Active Sector: <span className="text-cyan-400">{selectedRegion.name}</span></p>
                   <div className="flex items-center gap-2 text-slate-400">
@@ -319,7 +322,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Road Connectivity Bar (from image) */}
+              {/* Road Connectivity Bar */}
               <div className="mt-3 bg-[#0f1a2e] border border-slate-800 p-2 rounded-lg">
                 <p className="font-bold text-slate-400 uppercase text-[9px] mb-1.5">Critical Arterial Lifeline</p>
                 <div className="flex justify-between items-center text-[11px]">
@@ -340,13 +343,13 @@ export default function App() {
             {/* Weather Line Chart Card */}
             <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col">
               <div className="flex justify-between items-center mb-1">
-    <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px]">
-      Weather & Risk Forecast
-    </span>
-    <span className="text-[10px] text-cyan-400 font-mono bg-[#0f1a2e] px-2 py-0.5 rounded border border-slate-800">
-      {selectedRegion.name}, {selectedRegion.state.slice(0, 2).toUpperCase()}
-    </span>
-  </div>
+                <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px]">
+                  Weather & Risk Forecast
+                </span>
+                <span className="text-[10px] text-cyan-400 font-mono bg-[#0f1a2e] px-2 py-0.5 rounded border border-slate-800">
+                  {selectedRegion.name}, {selectedRegion.state.slice(0, 2).toUpperCase()}
+                </span>
+              </div>
               
               <div className="grid grid-cols-4 gap-1.5 my-2 text-center">
                 <div className="bg-[#0f1a2e] p-1.5 rounded border border-slate-800">
@@ -380,7 +383,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* Risk Factor Contribution Donut (Matches bottom middle of screenshot) */}
+            {/* Risk Factor Contribution Donut */}
             <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col justify-between">
               <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px]">Risk Factors Contribution</span>
               <div className="flex items-center justify-between gap-2 mt-1">
@@ -424,7 +427,7 @@ export default function App() {
 
           </div>
 
-          {/* COLUMN 3 (3 cols): Active Alert Feed & Action Buttons */}
+          {/* COLUMN 3 (3 cols): Active Alerts, Geophone Telemetry, & Emergency Response */}
           <div className="col-span-3 flex flex-col gap-3">
             
             {/* Active Alerts List */}
@@ -436,7 +439,7 @@ export default function App() {
                 <span className="text-[9px] bg-red-950 text-red-400 px-1.5 py-0.5 rounded font-bold border border-red-800">4 Critical</span>
               </div>
 
-              <div className="space-y-2 overflow-y-auto flex-1 pr-1 max-h-[220px]">
+              <div className="space-y-2 overflow-y-auto flex-1 pr-1 max-h-[160px]">
                 <div className="p-2 bg-[#0f1a2e] border-l-2 border-red-500 rounded text-[11px]">
                   <p className="font-bold text-red-400">West Kameng, AP</p>
                   <p className="text-[10px] text-slate-400 mt-0.5 leading-snug">Severe mudflow threat. Evacuate downstream valley camps.</p>
@@ -451,48 +454,33 @@ export default function App() {
                 </div>
               </div>
             </div>
-            {/* COLUMN 3 (3 cols): Active Alert Feed & Action Buttons */}
-<div className="col-span-3 flex flex-col gap-3">
-  
-  {/* Active Alerts List */}
-  <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col">
-    {/* ...alerts content... */}
-  </div>
 
-  {/* ==================================================== */}
-  {/* 👇 PLACE FIX #3 (Ground Geophone Telemetry) HERE 👇 */}
-  {/* ==================================================== */}
-  <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col justify-between">
-    <div className="flex justify-between items-center mb-1.5">
-      <span className="font-bold uppercase tracking-wider text-slate-300 text-[10px]">
-        Ground Geophone Telemetry
-      </span>
-      <span className="text-[9px] text-emerald-400 font-mono animate-pulse">● LIVE 10Hz</span>
-    </div>
-    
-    <div className="space-y-1.5 text-[10px]">
-      <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
-        <span className="text-slate-400">Pore Pressure (Piezo-04)</span>
-        <span className="text-cyan-400 font-mono font-bold">142.4 kPa</span>
-      </div>
-      <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
-        <span className="text-slate-400">Tilt Angle (Inclinometer-2)</span>
-        <span className="text-amber-400 font-mono font-bold">+1.84° / hr</span>
-      </div>
-      <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
-        <span className="text-slate-400">Acoustic Vibration (Geo-01)</span>
-        <span className="text-emerald-400 font-mono font-bold">0.042 mm/s²</span>
-      </div>
-    </div>
-  </div>
-  {/* ==================================================== */}
+            {/* Ground Geophone Telemetry Stream */}
+            <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col justify-between">
+              <div className="flex justify-between items-center mb-1.5">
+                <span className="font-bold uppercase tracking-wider text-slate-300 text-[10px]">
+                  Ground Geophone Telemetry
+                </span>
+                <span className="text-[9px] text-emerald-400 font-mono animate-pulse">● LIVE 10Hz</span>
+              </div>
+              
+              <div className="space-y-1.5 text-[10px]">
+                <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
+                  <span className="text-slate-400">Pore Pressure (Piezo-04)</span>
+                  <span className="text-cyan-400 font-mono font-bold">142.4 kPa</span>
+                </div>
+                <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
+                  <span className="text-slate-400">Tilt Angle (Inclinometer-2)</span>
+                  <span className="text-amber-400 font-mono font-bold">+1.84° / hr</span>
+                </div>
+                <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
+                  <span className="text-slate-400">Acoustic Vibration (Geo-01)</span>
+                  <span className="text-emerald-400 font-mono font-bold">0.042 mm/s²</span>
+                </div>
+              </div>
+            </div>
 
-  {/* Emergency Quick Action Buttons */}
-  <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
-    {/* ...buttons content... */}
-  </div>
-</div>  
-            {/* Emergency Quick Action Buttons (Red, Blue, Green cards from image) */}
+            {/* Emergency Quick Action Buttons */}
             <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
               <p className="font-bold text-slate-400 uppercase text-[9px]">Emergency Response</p>
               
@@ -517,7 +505,7 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Multi-Lingual Box (from bottom-right of screenshot) */}
+              {/* Multi-Lingual Box */}
               <div className="bg-[#0f1a2e] border border-slate-800 p-2 rounded text-[10px] text-slate-400 leading-tight">
                 <span className="font-bold text-cyan-400">हिन्दी चेतावनी:</span> पश्चिम कामेंग में भारी बारिश के कारण भूस्खलन का अलर्ट जारी किया गया है।
               </div>
