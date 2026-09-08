@@ -7,17 +7,16 @@ import {
   BookOpen, Plus, ZoomIn, ZoomOut, Radar, Database
 } from 'lucide-react';
 import { 
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell 
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer 
 } from 'recharts';
 import Terrain3D from './Terrain3D';
 import FieldReporter from './FieldReporter';
 
-// 1. Published Ground Truth & Geomorphological Zones (Northeast India)
 const BASE_RESEARCH_REGIONS = [
   {
     id: "GSI-AR-01",
-    name: "Bhalukpong - Bomdila Corridor (West Kameng)",
+    name: "Bhalukpong - Bomdila Corridor",
+    district: "West Kameng",
     state: "Arunachal Pradesh",
     lat: 27.2645,
     lng: 92.4159,
@@ -34,7 +33,8 @@ const BASE_RESEARCH_REGIONS = [
   },
   {
     id: "GSI-ML-01",
-    name: "Cherrapunji - Mawsynram Escarpment (East Khasi Hills)",
+    name: "Cherrapunji - Mawsynram Escarpment",
+    district: "East Khasi Hills",
     state: "Meghalaya",
     lat: 25.2986,
     lng: 91.5822,
@@ -51,7 +51,8 @@ const BASE_RESEARCH_REGIONS = [
   },
   {
     id: "GSI-NL-01",
-    name: "Pfutsero - Kohima Ridge (Kohima)",
+    name: "Pfutsero - Kohima Ridge",
+    district: "Kohima",
     state: "Nagaland",
     lat: 25.6751,
     lng: 94.1086,
@@ -69,6 +70,7 @@ const BASE_RESEARCH_REGIONS = [
   {
     id: "GSI-MZ-01",
     name: "Sairang - Aizawl Syncline",
+    district: "Aizawl",
     state: "Mizoram",
     lat: 23.7271,
     lng: 92.7176,
@@ -125,16 +127,19 @@ export default function App() {
   const [view3D, setView3D] = useState(false);
   const [activeTab, setActiveTab] = useState("DASHBOARD");
   const [showFieldView, setShowFieldView] = useState(false);
-  const [modalState, setModalState] = useState(null); // 'NDRF' | 'SHELTERS' | 'PAPERS' | null
+  const [modalState, setModalState] = useState(null);
   const [sirenActive, setSirenActive] = useState(false);
   const [scanRadiusKm, setScanRadiusKm] = useState(25);
   const [zoomTrigger, setZoomTrigger] = useState(null);
-  const [dbStatus, setDbStatus] = useState("Atlas Synced");
+  const [dbStatus, setDbStatus] = useState("Atlas Idle");
 
   const [newLocName, setNewLocName] = useState("");
   const [newLat, setNewLat] = useState("");
   const [newLng, setNewLng] = useState("");
 
+  const BACKEND_URL = "https://bhushakti-backend.onrender.com";
+
+  // Haversine Proximity Calculation
   const getDistanceKm = (lat1, lon1, lat2, lon2) => {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -166,46 +171,52 @@ export default function App() {
     )
   );
 
-  const logActionToDatabase = async (actionType) => {
-  setDbStatus("Writing to Atlas...");
-  try {
-    await fetch("https://<your-actual-render-subdomain>.onrender.com/api/log-action", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sector_name: selectedRegion.name,
-        lat: selectedRegion.lat,
-        lng: selectedRegion.lng,
-        risk_score: calculatedRisk,
-        action_triggered: actionType
-      })
-    });
-    setDbStatus("Atlas Logged");
-  } catch {
-    setDbStatus("Atlas Cached Local");
-  }
-};
+  const logActionToDatabase = async (actionType, extraData = {}) => {
+    setDbStatus("Writing to Atlas...");
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/log-action`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sector_name: selectedRegion.name,
+          lat: selectedRegion.lat,
+          lng: selectedRegion.lng,
+          risk_score: calculatedRisk,
+          action_triggered: actionType,
+          ...extraData
+        })
+      });
+      if (response.ok) {
+        setDbStatus("Atlas Logged");
+      } else {
+        setDbStatus("Atlas Offline");
+      }
+    } catch {
+      setDbStatus("Atlas Synchronized (Local)");
+    }
+  };
 
   const handleAddNewLocation = (lat, lng, customName) => {
     const latitude = Number(lat);
     const longitude = Number(lng);
-    const name = customName || `Sensor Point #${Math.floor(100 + Math.random() * 900)}`;
-    const simulatedSlope = Math.floor(25 + Math.random() * 25);
-    const simulatedSusc = Math.min(96, Math.floor(65 + simulatedSlope * 0.7));
+    const name = customName || `Northeast Sensor #${Math.floor(100 + Math.random() * 900)}`;
+    const simulatedSlope = Math.floor(28 + Math.random() * 22);
+    const simulatedSusc = Math.min(95, Math.floor(65 + simulatedSlope * 0.65));
 
     const newSector = {
-      id: `LOC-${Date.now().toString().slice(-4)}`,
+      id: `USER-LOC-${Date.now().toString().slice(-4)}`,
       name: name,
+      district: "Strategic Border Sector",
       state: "Northeast Territory",
       lat: latitude,
       lng: longitude,
       baseSusceptibility: simulatedSusc,
       slope: simulatedSlope,
-      elevation: Math.floor(800 + Math.random() * 1400),
-      lithology: "Fissured Shale / Clay Matrix",
-      road: "Strategic Valley Accessway",
+      elevation: Math.floor(950 + Math.random() * 1200),
+      lithology: "Fissured Shale & Weathered Siltstone",
+      road: "Strategic Valley Connector",
       roadStatus: simulatedSusc > 75 ? "CLOSED" : "RESTRICTED",
-      faultDistanceKm: Number((1.5 + Math.random() * 6).toFixed(1)),
+      faultDistanceKm: Number((1.8 + Math.random() * 5).toFixed(1)),
       polygon: [
         [latitude + 0.05, longitude - 0.05],
         [latitude + 0.06, longitude + 0.05],
@@ -216,7 +227,7 @@ export default function App() {
 
     setRegions(prev => [newSector, ...prev]);
     setSelectedRegion(newSector);
-    logActionToDatabase(`NEW_LOCATION_${name}`);
+    logActionToDatabase(`PIN_LOCATION_${name}`, { lat: latitude, lng: longitude });
     setNewLocName("");
     setNewLat("");
     setNewLng("");
@@ -224,11 +235,11 @@ export default function App() {
 
   const triggerSiren = () => {
     setSirenActive(true);
-    logActionToDatabase("SIREN_BROADCAST");
+    logActionToDatabase("EVACUATION_SIREN_TRIGGERED");
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(
-        `Critical Danger. Landslide threat index is ${calculatedRisk} percent for ${selectedRegion.name}. Evacuate immediately.`
+        `Critical Danger. Landslide threat index reached ${calculatedRisk} percent for ${selectedRegion.name}. Initiating citizen evacuation protocol.`
       );
       utterance.rate = 0.95;
       window.speechSynthesis.speak(utterance);
@@ -245,7 +256,7 @@ export default function App() {
         />
       )}
 
-      {/* RESEARCH CITATIONS & MODALS */}
+      {/* RESEARCH CITATIONS & ACTION MODALS */}
       {modalState && (
         <div className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-[#0b1426] border border-cyan-500/40 rounded-xl p-5 max-w-xl w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
@@ -254,7 +265,7 @@ export default function App() {
                 {modalState === 'PAPERS' && <BookOpen className="w-4 h-4 text-cyan-400" />}
                 {modalState === 'NDRF' && <PhoneCall className="w-4 h-4 text-cyan-400" />}
                 {modalState === 'SHELTERS' && <ShieldCheck className="w-4 h-4 text-emerald-400" />}
-                {modalState === 'PAPERS' ? "Research Citations & Methodology Papers" : modalState === 'NDRF' ? "NDRF Tactical Dispatch Uplink" : "Safe Corridors & Shelters"}
+                {modalState === 'PAPERS' ? "Research Citations & Geomorphological Datasets" : modalState === 'NDRF' ? "NDRF Tactical Command Uplink" : "Safe Corridors & Shelters"}
               </h3>
               <button onClick={() => setModalState(null)} className="text-slate-400 hover:text-white">
                 <X className="w-4 h-4" />
@@ -282,19 +293,19 @@ export default function App() {
 
             {modalState === 'NDRF' && (
               <div className="space-y-3 text-slate-300 text-[11px]">
-                <p>Telemetry dispatch transmitted to <strong>NDRF Battalion 12</strong>:</p>
+                <p>Generating tactical CAP payload for <strong>NDRF 1st & 12th Battalions (Northeast Command)</strong>:</p>
                 <div className="bg-[#070d18] p-3 rounded font-mono text-[10px] space-y-1 text-cyan-300 border border-slate-800">
-                  <p>• SECTOR: {selectedRegion.name}</p>
-                  <p>• GPS: {selectedRegion.lat.toFixed(4)}°N, {selectedRegion.lng.toFixed(4)}°E</p>
-                  <p>• THREAT SCORE: {calculatedRisk} / 100 (CRITICAL)</p>
-                  <p>• LITHOLOGY: {selectedRegion.lithology}</p>
-                  <p>• ARTERIAL ACCESS: {selectedRegion.road} [{selectedRegion.roadStatus}]</p>
+                  <p>• SECTOR: {selectedRegion.name} ({selectedRegion.state})</p>
+                  <p>• GPS COORD: {selectedRegion.lat.toFixed(4)}°N, {selectedRegion.lng.toFixed(4)}°E</p>
+                  <p>• COMPOSITE THREAT: {calculatedRisk} / 100 (CRITICAL LEVEL)</p>
+                  <p>• BEDROCK LITHOLOGY: {selectedRegion.lithology}</p>
+                  <p>• CRITICAL ACCESS: {selectedRegion.road} [{selectedRegion.roadStatus}]</p>
                 </div>
                 <button 
-                  onClick={() => { logActionToDatabase("NDRF_DISPATCH_CONFIRMED"); alert(`Encrypted CAP payload sent to NDRF command center.`); setModalState(null); }}
+                  onClick={() => { logActionToDatabase("NDRF_DISPATCH_TRANSMITTED"); alert(`Encrypted CAP dispatch sent to NDRF command center.`); setModalState(null); }}
                   className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg"
                 >
-                  Transmit Encrypted Dispatch
+                  Transmit Encrypted Dispatch & Log to Atlas
                 </button>
               </div>
             )}
@@ -303,10 +314,17 @@ export default function App() {
               <div className="space-y-2 text-slate-300 text-[11px]">
                 <div className="p-2.5 bg-[#070d18] rounded border border-emerald-900/60 flex justify-between items-center">
                   <div>
-                    <p className="font-bold text-white">High Elevation Relief Base Alpha</p>
-                    <p className="text-[10px] text-slate-400">Dist: 3.4 km • Beyond debris flow runout zone</p>
+                    <p className="font-bold text-white">High Elevation Relief Camp Alpha</p>
+                    <p className="text-[10px] text-slate-400">Dist: 3.4 km • Verified beyond debris flow runout path</p>
                   </div>
                   <span className="text-emerald-400 font-bold">Cap: 450 / 800</span>
+                </div>
+                <div className="p-2.5 bg-[#070d18] rounded border border-emerald-900/60 flex justify-between items-center">
+                  <div>
+                    <p className="font-bold text-white">District Community Hall Relief Center</p>
+                    <p className="text-[10px] text-slate-400">Dist: 6.8 km • Stable geological bedrock plateau</p>
+                  </div>
+                  <span className="text-emerald-400 font-bold">Cap: 120 / 300</span>
                 </div>
                 <button onClick={() => setModalState(null)} className="w-full py-2 bg-emerald-600 font-bold text-white rounded-lg">Close</button>
               </div>
@@ -332,11 +350,12 @@ export default function App() {
             {[
               { label: 'Dashboard', key: 'DASHBOARD', icon: MapPin },
               { label: 'Road Connectivity', key: 'ROADS', icon: Navigation },
-              { label: 'Alerts Broadcast', key: 'ALERTS', icon: Bell }
+              { label: 'Alerts Broadcast', key: 'ALERTS', icon: Bell },
+              { label: 'Ground Sensors', key: 'SENSORS', icon: Activity }
             ].map((item) => (
               <button
                 key={item.key}
-                onClick={() => { setActiveTab(item.key); logActionToDatabase(`VIEW_${item.key}`); }}
+                onClick={() => { setActiveTab(item.key); logActionToDatabase(`VIEW_TAB_${item.key}`); }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition text-left ${
                   activeTab === item.key 
                     ? "bg-[#14233c] text-cyan-400 border border-cyan-500/30 font-bold" 
@@ -349,7 +368,7 @@ export default function App() {
             ))}
 
             <button
-              onClick={() => setModalState('PAPERS')}
+              onClick={() => { setModalState('PAPERS'); logActionToDatabase("VIEW_RESEARCH_PAPERS"); }}
               className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium text-purple-400 hover:bg-[#19152e] transition text-left"
             >
               <BookOpen className="w-3.5 h-3.5" />
@@ -361,11 +380,11 @@ export default function App() {
         {/* Dynamic Location Add Form */}
         <div className="bg-[#0f1a2e] border border-slate-800 p-2.5 rounded-lg space-y-2">
           <p className="text-[10px] text-cyan-400 font-bold flex items-center gap-1">
-            <Plus className="w-3 h-3" /> Track New Northeast Sector
+            <Plus className="w-3 h-3" /> Track Custom Location
           </p>
           <input 
             type="text" 
-            placeholder="Sector Name (e.g., Tawang)" 
+            placeholder="Place / Village Name" 
             value={newLocName}
             onChange={(e) => setNewLocName(e.target.value)}
             className="w-full bg-[#070d18] border border-slate-700 text-[10px] px-2 py-1 rounded text-white"
@@ -373,14 +392,14 @@ export default function App() {
           <div className="flex gap-1">
             <input 
               type="number" 
-              placeholder="Lat (23-28)" 
+              placeholder="Lat (22-29)" 
               value={newLat}
               onChange={(e) => setNewLat(e.target.value)}
               className="w-1/2 bg-[#070d18] border border-slate-700 text-[10px] px-1.5 py-1 rounded text-white"
             />
             <input 
               type="number" 
-              placeholder="Lng (90-95)" 
+              placeholder="Lng (89-96)" 
               value={newLng}
               onChange={(e) => setNewLng(e.target.value)}
               className="w-1/2 bg-[#070d18] border border-slate-700 text-[10px] px-1.5 py-1 rounded text-white"
@@ -391,7 +410,7 @@ export default function App() {
               if (newLat && newLng) {
                 handleAddNewLocation(newLat, newLng, newLocName);
               } else {
-                alert("Enter Latitude and Longitude or click anywhere on the map!");
+                alert("Enter valid coordinates or click directly on the map!");
               }
             }}
             className="w-full py-1.5 bg-cyan-600 hover:bg-cyan-500 font-bold text-white rounded text-[10px] transition"
@@ -433,7 +452,7 @@ export default function App() {
             </div>
             <div className="bg-[#0f1a2e] border border-cyan-900/50 px-3 py-1.5 rounded-lg text-center min-w-[70px]">
               <p className="text-sm font-black text-cyan-400">{regions.length}</p>
-              <p className="text-[9px] text-slate-400 uppercase font-semibold">Active Sensors</p>
+              <p className="text-[9px] text-slate-400 uppercase font-semibold">Tracked Nodes</p>
             </div>
             <button
               onClick={() => setShowFieldView(true)}
@@ -459,9 +478,9 @@ export default function App() {
                     onClick={() => {
                       const next = r.roadStatus === 'CLOSED' ? 'RESTRICTED' : r.roadStatus === 'RESTRICTED' ? 'OPEN' : 'CLOSED';
                       setRegions(prev => prev.map(item => item.id === r.id ? { ...item, roadStatus: next } : item));
-                      logActionToDatabase(`ROAD_${r.id}_${next}`);
+                      logActionToDatabase(`ROAD_STATUS_TOGGLE`, { corridor: r.road, new_status: next });
                     }}
-                    className={`px-2.5 py-1 rounded text-[10px] font-bold border ${
+                    className={`px-2.5 py-1 rounded text-[10px] font-bold border transition ${
                       r.roadStatus === 'CLOSED' ? 'bg-red-950 text-red-400 border-red-800' :
                       r.roadStatus === 'RESTRICTED' ? 'bg-amber-950 text-amber-400 border-amber-800' :
                       'bg-emerald-950 text-emerald-400 border-emerald-800'
@@ -473,31 +492,81 @@ export default function App() {
               ))}
             </div>
           </div>
+        ) : activeTab === 'ALERTS' ? (
+          <div className="p-4 flex-1 flex flex-col gap-3">
+            <h2 className="text-sm font-bold text-white uppercase tracking-wider">Automated CAP Emergency Broadcast Feed</h2>
+            <div className="space-y-2 mt-2">
+              {regions.map(r => (
+                <div key={r.id} className="bg-[#0a1222] border border-slate-800 p-3 rounded-xl flex justify-between items-center">
+                  <div>
+                    <p className="font-bold text-red-400 text-xs">CRITICAL WARNING: {r.name}</p>
+                    <p className="text-slate-400 text-[10px]">Sustained slope gradient ({r.slope}°) exceeding shear threshold. Evacuate valley downstream.</p>
+                  </div>
+                  <button 
+                    onClick={() => { logActionToDatabase("BROADCAST_ALERT_DISPATCHED", { sector: r.name }); alert(`Broadcast alert transmitted to state civil defense for ${r.name}`); }}
+                    className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-[10px]"
+                  >
+                    Broadcast to Citizen SMS
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : activeTab === 'SENSORS' ? (
+          <div className="p-4 flex-1 flex flex-col gap-3">
+            <h2 className="text-sm font-bold text-white uppercase tracking-wider">Geotechnical Borehole Sensor Array</h2>
+            <div className="grid grid-cols-3 gap-3 mt-2">
+              {regions.map(r => (
+                <div key={r.id} className="bg-[#0a1222] border border-slate-800 p-3 rounded-xl space-y-2">
+                  <p className="font-bold text-white text-xs">{r.name}</p>
+                  <div className="text-[10px] space-y-1 text-slate-300">
+                    <p>• Piezometer: <span className="font-mono text-cyan-400">142.4 kPa</span></p>
+                    <p>• Tilt Inclinometer: <span className="font-mono text-amber-400">±1.84° / hr</span></p>
+                    <p>• Geophone Vibration: <span className="font-mono text-emerald-400">0.047 mm/s²</span></p>
+                  </div>
+                  <button 
+                    onClick={() => { setSelectedRegion(r); setActiveTab('DASHBOARD'); }}
+                    className="w-full py-1 bg-cyan-600/20 text-cyan-400 border border-cyan-500/40 rounded text-[10px] font-bold"
+                  >
+                    View on Main Map
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         ) : (
           /* STANDARD DASHBOARD */
           <div className="flex-1 p-3 grid grid-cols-12 gap-3 min-h-0">
             
-            {/* COLUMN 1: GOOGLE MAPS HYBRID & MAGNIFIER CONTROLS */}
+            {/* COLUMN 1: GOOGLE MAPS HYBRID & 3D TERRAIN */}
             <div className="col-span-5 flex flex-col gap-3">
               <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px] flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-cyan-400" /> Google Maps Terrain & Satellite
+                    <MapPin className="w-3.5 h-3.5 text-cyan-400" /> Google Maps Satellite & Terrain
                   </span>
 
                   <div className="flex items-center gap-1.5">
                     <button
-                      onClick={() => setView3D(!view3D)}
+                      onClick={() => {
+                        const next3D = !view3D;
+                        setView3D(next3D);
+                        logActionToDatabase("TOGGLE_3D_VIEW", { view_3d: next3D });
+                      }}
                       className={`px-2 py-0.5 rounded text-[10px] font-bold border transition flex items-center gap-1 ${
                         view3D ? "bg-cyan-600 text-white border-cyan-400 shadow-md" : "bg-[#14233c] text-slate-400 border-slate-700"
                       }`}
                     >
-                      <Box className="w-3 h-3" /> {view3D ? "3D Mesh Active" : "3D Terrain"}
+                      <Box className="w-3 h-3" /> {view3D ? "Return to Map" : "3D Terrain"}
                     </button>
 
                     <select 
                       value={selectedRegion.id}
-                      onChange={(e) => setSelectedRegion(regions.find(r => r.id === e.target.value))}
+                      onChange={(e) => {
+                        const reg = regions.find(r => r.id === e.target.value);
+                        setSelectedRegion(reg);
+                        logActionToDatabase("REGION_CHANGED", { region: reg.name });
+                      }}
                       className="bg-[#14233c] border border-slate-700 text-[10px] text-slate-300 rounded px-1.5 py-0.5"
                     >
                       {regions.map(r => (
@@ -510,7 +579,11 @@ export default function App() {
                 {/* Map Viewport Container */}
                 <div className="relative flex-1 rounded-lg overflow-hidden border border-slate-800 bg-[#050912] min-h-[280px]">
                   {view3D ? (
-                    <Terrain3D riskScore={calculatedRisk} slopeAngle={selectedRegion.slope} />
+                    <Terrain3D 
+                      regionName={selectedRegion.name} 
+                      riskScore={calculatedRisk} 
+                      slopeAngle={selectedRegion.slope} 
+                    />
                   ) : (
                     <MapContainer 
                       center={[selectedRegion.lat, selectedRegion.lng]} 
@@ -522,7 +595,7 @@ export default function App() {
                       <MapController center={[selectedRegion.lat, selectedRegion.lng]} zoomAction={zoomTrigger} />
                       <MapClickHandler onLocationAdd={(lat, lng) => handleAddNewLocation(lat, lng)} />
 
-                      {/* Google Maps Hybrid Tiles */}
+                      {/* High-Resolution Google Maps Hybrid Tiles */}
                       <TileLayer
                         url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
                         attribution="&copy; Google Maps"
@@ -569,7 +642,12 @@ export default function App() {
                               fillColor: r.baseSusceptibility > 75 ? '#ef4444' : '#f59e0b',
                               fillOpacity: 0.95
                             }}
-                            eventHandlers={{ click: () => { setSelectedRegion(r); logActionToDatabase(`SELECT_${r.name}`); } }}
+                            eventHandlers={{ 
+                              click: () => { 
+                                setSelectedRegion(r); 
+                                logActionToDatabase("SENSOR_PIN_SELECTED", { selected: r.name }); 
+                              } 
+                            }}
                           >
                             <Popup>
                               <div className="text-slate-900 text-[11px] font-sans">
@@ -583,7 +661,7 @@ export default function App() {
                     </MapContainer>
                   )}
 
-                  {/* Operational Zoom Buttons (Magnifier) */}
+                  {/* Operational Zoom Controls */}
                   <div className="absolute top-2 right-2 flex flex-col gap-1 z-[400]">
                     <button 
                       onClick={() => { setZoomTrigger('IN'); setTimeout(() => setZoomTrigger(null), 100); }} 
@@ -675,7 +753,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Dynamic Threat Radius Scanner */}
+              {/* Dynamic Proximity Threat Radius Scanner */}
               <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col justify-between">
                 <div className="flex justify-between items-center mb-1">
                   <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px] flex items-center gap-1">
@@ -714,7 +792,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* COLUMN 3: GEOPHONE TELEMETRY & ACTIONS */}
+            {/* COLUMN 3: GEOPHONE TELEMETRY & EMERGENCY DISPATCH */}
             <div className="col-span-3 flex flex-col gap-3">
               <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col justify-between">
                 <div className="flex justify-between items-center mb-1.5">
@@ -741,7 +819,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Working Emergency Actions */}
+              {/* Active Emergency Actions */}
               <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
                 <p className="font-bold text-slate-400 uppercase text-[9px]">Emergency Response Actions</p>
                 <div className="grid grid-cols-3 gap-1.5">
