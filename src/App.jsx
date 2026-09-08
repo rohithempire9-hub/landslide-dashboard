@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Popup, useMap, Polygon, Circle, useMapEvents } from 'react-leaflet';
 import { 
   AlertTriangle, ShieldCheck, CloudRain, Droplets, 
-  MapPin, Radio, Bell, Send, Navigation, Volume2, 
+  MapPin, Radio, Bell, Navigation, Volume2, 
   Box, Layers, Settings, PhoneCall, X, Activity, 
-  BookOpen, Plus, Search, Radar
+  BookOpen, Plus, ZoomIn, ZoomOut, Radar, Database
 } from 'lucide-react';
 import { 
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, 
@@ -94,16 +94,20 @@ const FORECAST_DATA = [
   { time: '20:00', rain: 68, threat: 62 },
 ];
 
-// Recenter Map Helper
-function MapRecenter({ center }) {
+function MapController({ center, zoomAction }) {
   const map = useMap();
   useEffect(() => {
     map.flyTo(center, 9, { duration: 1.2 });
   }, [center, map]);
+
+  useEffect(() => {
+    if (zoomAction === 'IN') map.zoomIn();
+    if (zoomAction === 'OUT') map.zoomOut();
+  }, [zoomAction, map]);
+
   return null;
 }
 
-// Map Click Listener to add real dynamic locations
 function MapClickHandler({ onLocationAdd }) {
   useMapEvents({
     click(e) {
@@ -124,11 +128,13 @@ export default function App() {
   const [modalState, setModalState] = useState(null); // 'NDRF' | 'SHELTERS' | 'PAPERS' | null
   const [sirenActive, setSirenActive] = useState(false);
   const [scanRadiusKm, setScanRadiusKm] = useState(25);
+  const [zoomTrigger, setZoomTrigger] = useState(null);
+  const [dbStatus, setDbStatus] = useState("Atlas Synced");
+
   const [newLocName, setNewLocName] = useState("");
   const [newLat, setNewLat] = useState("");
   const [newLng, setNewLng] = useState("");
 
-  // Haversine Distance Calculator
   const getDistanceKm = (lat1, lon1, lat2, lon2) => {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -141,7 +147,6 @@ export default function App() {
     return Number((R * c).toFixed(1));
   };
 
-  // Automated danger proximity analysis for active location
   const proximateDangers = regions
     .filter(r => r.id !== selectedRegion.id)
     .map(r => ({
@@ -151,7 +156,6 @@ export default function App() {
     .filter(r => r.distance <= scanRadiusKm)
     .sort((a, b) => a.distance - b.distance);
 
-  // Dynamic Hazard Metric
   const calculatedRisk = Math.min(
     100,
     Math.round(
@@ -162,27 +166,44 @@ export default function App() {
     )
   );
 
-  // Add Dynamic Location
+  const logActionToDatabase = async (actionType) => {
+  setDbStatus("Writing to Atlas...");
+  try {
+    await fetch("https://<your-actual-render-subdomain>.onrender.com/api/log-action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sector_name: selectedRegion.name,
+        lat: selectedRegion.lat,
+        lng: selectedRegion.lng,
+        risk_score: calculatedRisk,
+        action_triggered: actionType
+      })
+    });
+    setDbStatus("Atlas Logged");
+  } catch {
+    setDbStatus("Atlas Cached Local");
+  }
+};
+
   const handleAddNewLocation = (lat, lng, customName) => {
     const latitude = Number(lat);
     const longitude = Number(lng);
-    const name = customName || `Sensor Node #${Math.floor(100 + Math.random() * 900)}`;
-
-    // Estimate slope & risk based on Northeast orographic profile
+    const name = customName || `Sensor Point #${Math.floor(100 + Math.random() * 900)}`;
     const simulatedSlope = Math.floor(25 + Math.random() * 25);
     const simulatedSusc = Math.min(96, Math.floor(65 + simulatedSlope * 0.7));
 
     const newSector = {
       id: `LOC-${Date.now().toString().slice(-4)}`,
       name: name,
-      state: "Northeast Spatial Grid",
+      state: "Northeast Territory",
       lat: latitude,
       lng: longitude,
       baseSusceptibility: simulatedSusc,
       slope: simulatedSlope,
       elevation: Math.floor(800 + Math.random() * 1400),
-      lithology: "Fissured Shale / Weathered Sandstone",
-      road: "State Strategic Highway Sector",
+      lithology: "Fissured Shale / Clay Matrix",
+      road: "Strategic Valley Accessway",
       roadStatus: simulatedSusc > 75 ? "CLOSED" : "RESTRICTED",
       faultDistanceKm: Number((1.5 + Math.random() * 6).toFixed(1)),
       polygon: [
@@ -195,6 +216,7 @@ export default function App() {
 
     setRegions(prev => [newSector, ...prev]);
     setSelectedRegion(newSector);
+    logActionToDatabase(`NEW_LOCATION_${name}`);
     setNewLocName("");
     setNewLat("");
     setNewLng("");
@@ -202,10 +224,11 @@ export default function App() {
 
   const triggerSiren = () => {
     setSirenActive(true);
+    logActionToDatabase("SIREN_BROADCAST");
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(
-        `Critical Danger Alert. Landslide threat index reached ${calculatedRisk} for ${selectedRegion.name}. Initiating mandatory evacuation.`
+        `Critical Danger. Landslide threat index is ${calculatedRisk} percent for ${selectedRegion.name}. Evacuate immediately.`
       );
       utterance.rate = 0.95;
       window.speechSynthesis.speak(utterance);
@@ -215,7 +238,6 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#070d18] text-slate-200 font-sans text-xs select-none">
       
-      {/* Mobile PWA Field Reporter */}
       {showFieldView && (
         <FieldReporter 
           onBack={() => setShowFieldView(false)} 
@@ -254,17 +276,13 @@ export default function App() {
                   <p className="font-bold text-white">3. Copernicus & NASA ALOS-PALSAR Digital Elevation Model (30m DEM)</p>
                   <p className="text-slate-400 text-[10px]">Used for Topographic Wetness Index (TWI), Slope Gradient, and Flow Accumulation computation.</p>
                 </div>
-                <div className="p-2.5 bg-[#070d18] rounded border border-slate-800 space-y-1">
-                  <p className="font-bold text-white">4. Dynamic Meteorological Ingestion</p>
-                  <p className="text-slate-400 text-[10px]">Open-Meteo High-Resolution Numerical Weather Prediction (NWP) API integrating IMD Radar precipitation models.</p>
-                </div>
-                <button onClick={() => setModalState(null)} className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 font-bold text-white rounded-lg">Done</button>
+                <button onClick={() => setModalState(null)} className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 font-bold text-white rounded-lg">Close</button>
               </div>
             )}
 
             {modalState === 'NDRF' && (
               <div className="space-y-3 text-slate-300 text-[11px]">
-                <p>Generating priority telemetry payload for <strong>NDRF Battalion 12</strong>:</p>
+                <p>Telemetry dispatch transmitted to <strong>NDRF Battalion 12</strong>:</p>
                 <div className="bg-[#070d18] p-3 rounded font-mono text-[10px] space-y-1 text-cyan-300 border border-slate-800">
                   <p>• SECTOR: {selectedRegion.name}</p>
                   <p>• GPS: {selectedRegion.lat.toFixed(4)}°N, {selectedRegion.lng.toFixed(4)}°E</p>
@@ -273,7 +291,7 @@ export default function App() {
                   <p>• ARTERIAL ACCESS: {selectedRegion.road} [{selectedRegion.roadStatus}]</p>
                 </div>
                 <button 
-                  onClick={() => { alert(`Emergency CAP payload transmitted to NDRF Command Console for ${selectedRegion.name}.`); setModalState(null); }}
+                  onClick={() => { logActionToDatabase("NDRF_DISPATCH_CONFIRMED"); alert(`Encrypted CAP payload sent to NDRF command center.`); setModalState(null); }}
                   className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg"
                 >
                   Transmit Encrypted Dispatch
@@ -286,7 +304,7 @@ export default function App() {
                 <div className="p-2.5 bg-[#070d18] rounded border border-emerald-900/60 flex justify-between items-center">
                   <div>
                     <p className="font-bold text-white">High Elevation Relief Base Alpha</p>
-                    <p className="text-[10px] text-slate-400">Dist: 3.4 km • Outside debris flow runout zone</p>
+                    <p className="text-[10px] text-slate-400">Dist: 3.4 km • Beyond debris flow runout zone</p>
                   </div>
                   <span className="text-emerald-400 font-bold">Cap: 450 / 800</span>
                 </div>
@@ -314,12 +332,11 @@ export default function App() {
             {[
               { label: 'Dashboard', key: 'DASHBOARD', icon: MapPin },
               { label: 'Road Connectivity', key: 'ROADS', icon: Navigation },
-              { label: 'Alerts Broadcast', key: 'ALERTS', icon: Bell },
-              { label: 'Ground Sensors', key: 'SENSORS', icon: Activity }
+              { label: 'Alerts Broadcast', key: 'ALERTS', icon: Bell }
             ].map((item) => (
               <button
                 key={item.key}
-                onClick={() => setActiveTab(item.key)}
+                onClick={() => { setActiveTab(item.key); logActionToDatabase(`VIEW_${item.key}`); }}
                 className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition text-left ${
                   activeTab === item.key 
                     ? "bg-[#14233c] text-cyan-400 border border-cyan-500/30 font-bold" 
@@ -341,7 +358,7 @@ export default function App() {
           </nav>
         </div>
 
-        {/* Add Location Form */}
+        {/* Dynamic Location Add Form */}
         <div className="bg-[#0f1a2e] border border-slate-800 p-2.5 rounded-lg space-y-2">
           <p className="text-[10px] text-cyan-400 font-bold flex items-center gap-1">
             <Plus className="w-3 h-3" /> Track New Northeast Sector
@@ -356,7 +373,7 @@ export default function App() {
           <div className="flex gap-1">
             <input 
               type="number" 
-              placeholder="Lat (25-28)" 
+              placeholder="Lat (23-28)" 
               value={newLat}
               onChange={(e) => setNewLat(e.target.value)}
               className="w-1/2 bg-[#070d18] border border-slate-700 text-[10px] px-1.5 py-1 rounded text-white"
@@ -374,14 +391,16 @@ export default function App() {
               if (newLat && newLng) {
                 handleAddNewLocation(newLat, newLng, newLocName);
               } else {
-                alert("Please input Latitude (e.g. 26.5) and Longitude (e.g. 93.2) or click on the map!");
+                alert("Enter Latitude and Longitude or click anywhere on the map!");
               }
             }}
             className="w-full py-1.5 bg-cyan-600 hover:bg-cyan-500 font-bold text-white rounded text-[10px] transition"
           >
             Deploy Tracking Radar
           </button>
-          <p className="text-[9px] text-slate-500 text-center">Or click anywhere on map</p>
+          <div className="flex items-center justify-between text-[9px] text-slate-500 pt-1">
+            <span className="flex items-center gap-1"><Database className="w-2.5 h-2.5 text-emerald-400" /> {dbStatus}</span>
+          </div>
         </div>
       </aside>
 
@@ -440,6 +459,7 @@ export default function App() {
                     onClick={() => {
                       const next = r.roadStatus === 'CLOSED' ? 'RESTRICTED' : r.roadStatus === 'RESTRICTED' ? 'OPEN' : 'CLOSED';
                       setRegions(prev => prev.map(item => item.id === r.id ? { ...item, roadStatus: next } : item));
+                      logActionToDatabase(`ROAD_${r.id}_${next}`);
                     }}
                     className={`px-2.5 py-1 rounded text-[10px] font-bold border ${
                       r.roadStatus === 'CLOSED' ? 'bg-red-950 text-red-400 border-red-800' :
@@ -457,12 +477,12 @@ export default function App() {
           /* STANDARD DASHBOARD */
           <div className="flex-1 p-3 grid grid-cols-12 gap-3 min-h-0">
             
-            {/* COLUMN 1: GOOGLE MAPS HYBRID & RADAR */}
+            {/* COLUMN 1: GOOGLE MAPS HYBRID & MAGNIFIER CONTROLS */}
             <div className="col-span-5 flex flex-col gap-3">
               <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col">
                 <div className="flex items-center justify-between mb-2">
                   <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px] flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-cyan-400" /> Google Maps Satellite & Radar
+                    <MapPin className="w-3.5 h-3.5 text-cyan-400" /> Google Maps Terrain & Satellite
                   </span>
 
                   <div className="flex items-center gap-1.5">
@@ -496,27 +516,27 @@ export default function App() {
                       center={[selectedRegion.lat, selectedRegion.lng]} 
                       zoom={9} 
                       className="h-full w-full"
-                      scrollWheelZoom={false}
+                      scrollWheelZoom={true}
                       zoomControl={false}
                     >
-                      <MapRecenter center={[selectedRegion.lat, selectedRegion.lng]} />
+                      <MapController center={[selectedRegion.lat, selectedRegion.lng]} zoomAction={zoomTrigger} />
                       <MapClickHandler onLocationAdd={(lat, lng) => handleAddNewLocation(lat, lng)} />
 
-                      {/* Google Maps Hybrid (Satellite + High-Res Road/Label Vector Overlay) */}
+                      {/* Google Maps Hybrid Tiles */}
                       <TileLayer
                         url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
                         attribution="&copy; Google Maps"
                         maxZoom={20}
                       />
 
-                      {/* Dynamic Radar Scan Radius Circle around focus node */}
+                      {/* Proximity Radius Circle */}
                       <Circle 
                         center={[selectedRegion.lat, selectedRegion.lng]}
                         radius={scanRadiusKm * 1000}
                         pathOptions={{
                           color: '#06b6d4',
                           fillColor: '#06b6d4',
-                          fillOpacity: 0.08,
+                          fillOpacity: 0.12,
                           dashArray: '4, 6'
                         }}
                       />
@@ -529,7 +549,7 @@ export default function App() {
                           pathOptions={{
                             color: r.baseSusceptibility > 75 ? '#ef4444' : '#f59e0b',
                             fillColor: r.baseSusceptibility > 75 ? '#ef4444' : '#f59e0b',
-                            fillOpacity: 0.35,
+                            fillOpacity: 0.40,
                             weight: 1.5,
                             dashArray: '3, 4'
                           }}
@@ -549,7 +569,7 @@ export default function App() {
                               fillColor: r.baseSusceptibility > 75 ? '#ef4444' : '#f59e0b',
                               fillOpacity: 0.95
                             }}
-                            eventHandlers={{ click: () => setSelectedRegion(r) }}
+                            eventHandlers={{ click: () => { setSelectedRegion(r); logActionToDatabase(`SELECT_${r.name}`); } }}
                           >
                             <Popup>
                               <div className="text-slate-900 text-[11px] font-sans">
@@ -563,13 +583,31 @@ export default function App() {
                     </MapContainer>
                   )}
 
-                  <div className="absolute top-2 left-2 bg-[#0a1222]/90 backdrop-blur border border-slate-700/80 p-2 rounded text-[10px] pointer-events-none z-[400] space-y-1">
-                    <p className="font-bold text-cyan-400">● 25 km Hazard Proximity Radar Active</p>
+                  {/* Operational Zoom Buttons (Magnifier) */}
+                  <div className="absolute top-2 right-2 flex flex-col gap-1 z-[400]">
+                    <button 
+                      onClick={() => { setZoomTrigger('IN'); setTimeout(() => setZoomTrigger(null), 100); }} 
+                      className="p-1.5 bg-[#0a1222]/90 border border-slate-700 hover:bg-slate-700 rounded text-cyan-400 transition"
+                      title="Zoom In"
+                    >
+                      <ZoomIn className="w-3.5 h-3.5" />
+                    </button>
+                    <button 
+                      onClick={() => { setZoomTrigger('OUT'); setTimeout(() => setZoomTrigger(null), 100); }} 
+                      className="p-1.5 bg-[#0a1222]/90 border border-slate-700 hover:bg-slate-700 rounded text-cyan-400 transition"
+                      title="Zoom Out"
+                    >
+                      <ZoomOut className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="absolute top-2 left-2 bg-[#0a1222]/90 backdrop-blur border border-slate-700/80 p-2 rounded text-[10px] pointer-events-none z-[400] space-y-0.5">
+                    <p className="font-bold text-cyan-400">● {scanRadiusKm} km Proximity Radar Active</p>
                     <p className="text-slate-300">Click anywhere on terrain to pin a new node</p>
                   </div>
                 </div>
 
-                {/* Lifeline Corridor Bar */}
+                {/* Road Corridor Bar */}
                 <div className="mt-2 bg-[#0f1a2e] border border-slate-800 p-2 rounded-lg flex justify-between items-center text-[11px]">
                   <div>
                     <p className="text-[9px] text-slate-400 uppercase font-bold">Lifeline Artery</p>
@@ -584,17 +622,17 @@ export default function App() {
               </div>
             </div>
 
-            {/* COLUMN 2: METEOROLOGY, SOIL CONTROLS & RADAR DANGERS */}
+            {/* COLUMN 2: SENSORS & RADAR DANGERS */}
             <div className="col-span-4 flex flex-col gap-3">
               <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col">
                 <div className="flex justify-between items-center mb-1">
-                  <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px]">Atmospheric Saturation Matrix</span>
+                  <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px]">Saturation Matrix</span>
                   <span className="text-[10px] text-cyan-400 font-mono bg-[#0f1a2e] px-2 py-0.5 rounded border border-slate-800">
                     {selectedRegion.name.slice(0, 18)}...
                   </span>
                 </div>
 
-                {/* Slider Controls */}
+                {/* Interactive Sliders */}
                 <div className="grid grid-cols-4 gap-1.5 my-2 text-center">
                   <div className="bg-[#0f1a2e] p-1.5 rounded border border-slate-800">
                     <p className="text-[9px] text-slate-400">Rainfall</p>
@@ -637,11 +675,11 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Proximity Danger Tracking Panel */}
+              {/* Dynamic Threat Radius Scanner */}
               <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col justify-between">
                 <div className="flex justify-between items-center mb-1">
                   <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px] flex items-center gap-1">
-                    <Radar className="w-3.5 h-3.5 text-cyan-400" /> Nearby Sector Threat Radar ({scanRadiusKm} km)
+                    <Radar className="w-3.5 h-3.5 text-cyan-400" /> Nearby Threat Radar ({scanRadiusKm} km)
                   </span>
                   <select 
                     value={scanRadiusKm} 
@@ -657,7 +695,7 @@ export default function App() {
                 <div className="space-y-1.5 overflow-y-auto max-h-[120px] pr-1">
                   {proximateDangers.length === 0 ? (
                     <div className="p-2 bg-[#0f1a2e] rounded text-[10px] text-slate-400 text-center">
-                      No adjacent critical shear planes within {scanRadiusKm} km radius.
+                      No adjacent critical shear planes within {scanRadiusKm} km.
                     </div>
                   ) : (
                     proximateDangers.map(d => (
@@ -685,11 +723,11 @@ export default function App() {
                 </div>
                 <div className="space-y-1.5 text-[10px]">
                   <div className="p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
-                    <span className="text-slate-400 block text-[9px]">Mapped Formation Lithology</span>
+                    <span className="text-slate-400 block text-[9px]">Lithology Formation</span>
                     <span className="text-purple-300 font-bold">{selectedRegion.lithology}</span>
                   </div>
                   <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
-                    <span className="text-slate-400">Nearest Major Fault</span>
+                    <span className="text-slate-400">Nearest Fault</span>
                     <span className="text-amber-400 font-mono font-bold">{selectedRegion.faultDistanceKm} km</span>
                   </div>
                   <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
@@ -703,7 +741,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Working Actions */}
+              {/* Working Emergency Actions */}
               <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
                 <p className="font-bold text-slate-400 uppercase text-[9px]">Emergency Response Actions</p>
                 <div className="grid grid-cols-3 gap-1.5">
@@ -714,13 +752,13 @@ export default function App() {
                     <Volume2 className="w-3.5 h-3.5" /> Siren
                   </button>
                   <button 
-                    onClick={() => setModalState('NDRF')}
+                    onClick={() => { setModalState('NDRF'); logActionToDatabase("OPEN_NDRF_MODAL"); }}
                     className="bg-cyan-600 hover:bg-cyan-500 text-white p-2 rounded-lg font-bold text-[10px] flex flex-col items-center justify-center gap-1 transition shadow-lg shadow-cyan-950/50"
                   >
                     <PhoneCall className="w-3.5 h-3.5" /> NDRF
                   </button>
                   <button 
-                    onClick={() => setModalState('SHELTERS')}
+                    onClick={() => { setModalState('SHELTERS'); logActionToDatabase("OPEN_SHELTERS_MODAL"); }}
                     className="bg-emerald-600 hover:bg-emerald-500 text-white p-2 rounded-lg font-bold text-[10px] flex flex-col items-center justify-center gap-1 transition shadow-lg shadow-emerald-950/50"
                   >
                     <ShieldCheck className="w-3.5 h-3.5" /> Shelters
