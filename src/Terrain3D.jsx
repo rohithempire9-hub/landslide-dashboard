@@ -1,8 +1,8 @@
 import React from 'react';
 
 export default function Terrain3D({ regionName = "Active Sector", riskScore = 65, slopeAngle = 35 }) {
-  // The exact photogrammetry model ID from UC Berkeley (Big Nelson Landslide)
-  const sketchfabId = "7981819ca0134d51955b20054ae8b670"; 
+  // Verified public photogrammetry landslide model ID (UAV Scan)
+  const sketchfabId = "cf404c643427444982a26b96519bc623";
 
   return (
     <div className="relative w-full h-full min-h-[280px] bg-[#050912]">
