@@ -1,5 +1,5 @@
 import React,{useEffect,useState} from 'react';
-import {CloudRain,Droplets,RefreshCw,Wind,Thermometer,Activity} from 'lucide-react';
+import {CloudRain,Droplets,RefreshCw,Wind,Thermometer} from 'lucide-react';
 
 const API=import.meta.env.VITE_API_URL||'https://bhushakti-backend.onrender.com';
 const levelClass=l=>l==='CRITICAL'?'text-red-400':l==='HIGH'?'text-amber-400':l==='WATCH'?'text-yellow-300':'text-emerald-400';
@@ -9,17 +9,16 @@ export default function LiveWeatherNetwork(){
   const[regions,setRegions]=useState([]),[open,setOpen]=useState(false),[loading,setLoading]=useState(false),[updated,setUpdated]=useState('');
   const load=async()=>{setLoading(true);try{const r=await fetch(API+'/api/regions');if(!r.ok)throw Error();const d=await r.json();if(Array.isArray(d)){setRegions(d);setUpdated(new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}));}}catch{}finally{setLoading(false)}};
   useEffect(()=>{load();const id=setInterval(load,60000);return()=>clearInterval(id)},[]);
-  useEffect(()=>{const header=document.querySelector('header');if(header)header.classList.add('bhusakthi-weather-header');return()=>header?.classList.remove('bhusakthi-weather-header')},[]);
   if(!regions.length)return null;
   const live=regions.filter(r=>r.data_status==='LIVE_WEATHER').length;
   return <>
-    <button onClick={()=>setOpen(v=>!v)} className="hidden xl:flex items-center gap-2 rounded-lg border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 hover:bg-cyan-500/10">
+    <button onClick={()=>setOpen(v=>!v)} className="fixed right-4 top-4 z-[3000] flex items-center gap-2 rounded-lg border border-cyan-500/20 bg-[#07101e]/95 px-3 py-2 shadow-lg backdrop-blur hover:bg-cyan-500/10">
       <CloudRain size={14} className="text-cyan-400"/>
       <span className="text-[8px] font-black tracking-widest text-slate-400">11-ZONE WEATHER</span>
       <span className="text-[8px] font-black text-emerald-400">● {live}/11 LIVE</span>
       {loading&&<RefreshCw size={11} className="animate-spin text-cyan-400"/>}
     </button>
-    {open&&<div className="fixed left-4 right-4 top-[76px] z-[2500] max-h-[calc(100vh-95px)] overflow-auto rounded-2xl border border-cyan-500/20 bg-[#07101e]/98 p-4 shadow-2xl backdrop-blur-xl">
+    {open&&<div className="fixed left-4 right-4 top-[68px] z-[2999] max-h-[calc(100vh-85px)] overflow-auto rounded-2xl border border-cyan-500/20 bg-[#07101e]/98 p-4 shadow-2xl backdrop-blur-xl">
       <div className="flex items-center justify-between mb-4 sticky top-0 bg-[#07101e]/95 py-1 z-10">
         <div><div className="flex items-center gap-2"><CloudRain size={18} className="text-cyan-400"/><b className="text-white tracking-widest">LIVE WEATHER NETWORK</b><span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[8px] font-black text-emerald-400">{live}/11 LIVE</span></div><p className="text-[9px] text-slate-500 mt-1">Automatic weather, rainfall and soil-moisture readings for all NER pilot zones · refreshed every 60 seconds{updated&&` · updated ${updated}`}</p></div>
         <div className="flex gap-2"><button onClick={load} className="action"><RefreshCw size={13} className={loading?'animate-spin':''}/>REFRESH NOW</button><button onClick={()=>setOpen(false)} className="action">CLOSE</button></div>
