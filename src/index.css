@@ -1,1 +1,22 @@
 @import "tailwindcss";
+
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #050a13; color: #e2e8f0; }
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; width: 100%; height: 100%; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+.panel { background: #0a1220; border: 1px solid #1e293b; border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,.16); }
+.metric { background: #0b1526; border: 1px solid #1e293b; border-radius: 8px; padding: 9px; display: grid; grid-template-columns: auto 1fr; gap: 4px 7px; align-items: center; }
+.metric b { color: #f8fafc; font-size: 12px; }
+.metric span { grid-column: 2; color: #64748b; font-size: 9px; }
+.metric svg { grid-row: 1 / span 2; width: 14px; height: 14px; color: #22d3ee; }
+.muted { color: #64748b; }
+.action { display: flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid #334155; background: #0b1526; color: #cbd5e1; border-radius: 9px; padding: 10px 12px; font-weight: 800; font-size: 10px; transition: .15s; }
+.action:hover { border-color: #22d3ee; color: white; transform: translateY(-1px); }
+.action.danger { border-color: rgba(239,68,68,.45); background: rgba(127,29,29,.18); color: #fca5a5; }
+.action.danger:hover { background: rgba(220,38,38,.25); }
+.leaflet-container { width: 100%; height: 100%; background: #0b1220; font-family: inherit; }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: #0b1424; color: #e2e8f0; border: 1px solid #334155; }
+.leaflet-control-zoom a { background: #0b1424 !important; color: #cbd5e1 !important; border-color: #334155 !important; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
