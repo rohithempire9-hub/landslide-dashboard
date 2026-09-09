@@ -21,10 +21,26 @@ const borderClass=l=>l==='CRITICAL'?'border-red-500/40':l==='HIGH'?'border-amber
 const makeUrl=()=>{const lat=ZONES.map(z=>z[4]).join(',');const lng=ZONES.map(z=>z[5]).join(',');return `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,rain,precipitation,wind_speed_10m&hourly=rain,precipitation,soil_moisture_0_to_1cm&past_hours=24&forecast_hours=1&timezone=auto`};
 const loadLive=async()=>{const res=await fetch(makeUrl(),{cache:'no-store'});if(!res.ok)throw Error('Live weather request failed');const raw=await res.json();const data=Array.isArray(raw)?raw:[raw];return ZONES.map((z,i)=>{const w=data[i]||{},c=w.current||{},h=w.hourly||{};const rains=(h.rain||[]).slice(-24);const rain24=Math.round(rains.reduce((a,v)=>a+Number(v||0),0)*10)/10;const soilArr=h.soil_moisture_0_to_1cm||[];const soilValue=soilArr.length?Number(soilArr[soilArr.length-1])*100:null;const structural=Math.min(28,z[6]*.18+(z[7]/50*100)*.10);const risk=soilValue==null?Math.round(Math.min(100,structural+Math.min(45,rain24/180*45))):Math.round(Math.min(100,structural+Math.min(45,rain24/180*45)+Math.min(27,soilValue/100*27)));return {id:z[0],name:z[1],district:z[2],state:z[3],lat:z[4],lng:z[5],slope:z[7],susceptibility:z[6],temperature_c:c.temperature_2m,humidity_pct:c.relative_humidity_2m,wind_kmh:c.wind_speed_10m,rainfall_mm:rain24,rain_1h_mm:Number(c.rain||0),soil_moisture_pct:soilValue,risk_score:risk,risk_level:level(risk),data_status:soilValue==null?'WEATHER_LIVE_SOIL_UNAVAILABLE':'LIVE_WEATHER',weather_source:'Open-Meteo LIVE'};});};
 
+function syncCommandCard(regions){
+ if(typeof document==='undefined'||!regions?.length)return;
+ const nameNodes=[...document.querySelectorAll('body *')].filter(el=>el.children.length===0&&el.textContent.trim());
+ const selectedName=nameNodes.find(el=>regions.some(r=>r.name===el.textContent.trim()));
+ const selected=selectedName?regions.find(r=>r.name===selectedName.textContent.trim()):regions[0];
+ if(!selected)return;
+ let card=selectedName?.closest('.panel');
+ if(!card){card=[...document.querySelectorAll('.panel')].find(el=>el.textContent.includes('24H RAIN')&&el.textContent.includes('SOIL MOISTURE'))}
+ if(!card)return;
+ const setValue=(label,value)=>{const labelEl=[...card.querySelectorAll('*')].find(el=>el.children.length===0&&el.textContent.trim()===label);if(!labelEl)return;const parent=labelEl.parentElement;const valueEl=parent?.querySelector('b');if(valueEl)valueEl.textContent=value;};
+ setValue('24H RAIN',selected.rainfall_mm==null?'--':`${Number(selected.rainfall_mm).toFixed(1)} mm`);
+ setValue('SOIL MOISTURE',selected.soil_moisture_pct==null?'--':`${Number(selected.soil_moisture_pct).toFixed(1)}%`);
+ setValue('RAIN 1H',selected.rain_1h_mm==null?'--':`${Number(selected.rain_1h_mm).toFixed(1)} mm`);
+}
+
 export default function LiveWeatherNetwork(){
  const[regions,setRegions]=useState([]),[open,setOpen]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState(''),[updated,setUpdated]=useState('');
- const load=async()=>{setLoading(true);setError('');try{const d=await loadLive();setRegions(d);setUpdated(new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}));window.dispatchEvent(new CustomEvent('bhusakthi-live-weather',{detail:d}));}catch(e){try{const r=await fetch(API+'/api/regions',{cache:'no-store'});if(!r.ok)throw Error();const d=await r.json();if(Array.isArray(d)&&d.length){setRegions(d);setUpdated(new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}));window.dispatchEvent(new CustomEvent('bhusakthi-live-weather',{detail:d}));setError('DIRECT WEATHER UNAVAILABLE · BACKEND LIVE FEED');}else throw Error();}catch{setError('LIVE WEATHER UNAVAILABLE');}}finally{setLoading(false)}};
- useEffect(()=>{load();const id=setInterval(load,60000);return()=>clearInterval(id)},[]);
+ const sync=(d)=>{setRegions(d);syncCommandCard(d);window.dispatchEvent(new CustomEvent('bhusakthi-live-weather',{detail:d}));};
+ const load=async()=>{setLoading(true);setError('');try{const d=await loadLive();sync(d);setUpdated(new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}));}catch(e){try{const r=await fetch(API+'/api/regions',{cache:'no-store'});if(!r.ok)throw Error();const d=await r.json();if(Array.isArray(d)&&d.length){sync(d);setUpdated(new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}));setError('DIRECT WEATHER UNAVAILABLE · BACKEND LIVE FEED');}else throw Error();}catch{setError('LIVE WEATHER UNAVAILABLE');}}finally{setLoading(false)}};
+ useEffect(()=>{load();const id=setInterval(load,60000);const observer=new MutationObserver(()=>{if(regions.length)syncCommandCard(regions)});observer.observe(document.body,{childList:true,subtree:true});return()=>{clearInterval(id);observer.disconnect()}},[regions.length]);
  if(!regions.length)return null;
  const live=regions.filter(r=>r.data_status==='LIVE_WEATHER').length;
  return <>
