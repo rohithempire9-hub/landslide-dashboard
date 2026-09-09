@@ -27,9 +27,7 @@ const BASE_RESEARCH_REGIONS = [
     road: "NH-13 (Trans-Arunachal Highway)",
     roadStatus: "CLOSED",
     faultDistanceKm: 3.2,
-    polygon: [
-      [27.36, 92.32], [27.38, 92.54], [27.18, 92.56], [27.14, 92.36]
-    ]
+    polygon: [[27.36, 92.32], [27.38, 92.54], [27.18, 92.56], [27.14, 92.36]]
   },
   {
     id: "GSI-ML-01",
@@ -45,9 +43,7 @@ const BASE_RESEARCH_REGIONS = [
     road: "SH-5 (Cherra-Shella Corridor)",
     roadStatus: "RESTRICTED",
     faultDistanceKm: 6.8,
-    polygon: [
-      [25.38, 91.48], [25.40, 91.70], [25.18, 91.68], [25.16, 91.46]
-    ]
+    polygon: [[25.38, 91.48], [25.40, 91.70], [25.18, 91.68], [25.16, 91.46]]
   },
   {
     id: "GSI-NL-01",
@@ -63,9 +59,7 @@ const BASE_RESEARCH_REGIONS = [
     road: "NH-29 (Dimapur Bypass)",
     roadStatus: "RESTRICTED",
     faultDistanceKm: 4.1,
-    polygon: [
-      [25.76, 94.02], [25.79, 94.22], [25.56, 94.20], [25.53, 94.02]
-    ]
+    polygon: [[25.76, 94.02], [25.79, 94.22], [25.56, 94.20], [25.53, 94.02]]
   },
   {
     id: "GSI-MZ-01",
@@ -81,9 +75,7 @@ const BASE_RESEARCH_REGIONS = [
     road: "NH-54 (Aizawl-Silchar Link)",
     roadStatus: "CLOSED",
     faultDistanceKm: 2.7,
-    polygon: [
-      [23.80, 92.65], [23.82, 92.78], [23.65, 92.79], [23.64, 92.66]
-    ]
+    polygon: [[23.80, 92.65], [23.82, 92.78], [23.65, 92.79], [23.64, 92.66]]
   }
 ];
 
@@ -144,32 +136,38 @@ export default function App() {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = 
-      Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return Number((R * c).toFixed(1));
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+    return Number((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))).toFixed(1));
   };
 
   const proximateDangers = regions
     .filter(r => r.id !== selectedRegion.id)
-    .map(r => ({
-      ...r,
-      distance: getDistanceKm(selectedRegion.lat, selectedRegion.lng, r.lat, r.lng)
-    }))
+    .map(r => ({ ...r, distance: getDistanceKm(selectedRegion.lat, selectedRegion.lng, r.lat, r.lng) }))
     .filter(r => r.distance <= scanRadiusKm)
     .sort((a, b) => a.distance - b.distance);
 
-  const calculatedRisk = Math.min(
-    100,
-    Math.round(
-      selectedRegion.baseSusceptibility * 0.40 +
-      Math.min(liveRain * 0.8, 50) * 0.35 +
-      (liveMoisture * 0.4) * 0.15 +
-      (selectedRegion.slope * 0.8) * 0.10
-    )
-  );
+  const calculatedRisk = Math.min(100, Math.round(selectedRegion.baseSusceptibility * 0.40 + Math.min(liveRain * 0.8, 50) * 0.35 + (liveMoisture * 0.4) * 0.15 + (selectedRegion.slope * 0.8) * 0.10));
+
+  // DYNAMIC SENSOR PHYSICS ENGINE
+  const generateSensorTelemetry = (region, currentRain, currentMoisture) => {
+    const baseRisk = (region.baseSusceptibility * 0.4 + currentRain * 0.3 + currentMoisture * 0.3) / 100;
+    
+    // Pore Pressure rises with moisture and rain
+    const piezo = (40 + (currentMoisture * 0.8) + (currentRain * 0.3) + (region.baseSusceptibility * 0.15)).toFixed(1);
+    
+    // Tilt increases exponentially with slope angle and saturation
+    const tilt = (0.05 + (baseRisk * region.slope * 0.04)).toFixed(2);
+    
+    // Geophone detects micro-fractures (spikes dramatically when risk is high)
+    const geo = (0.002 + Math.pow(baseRisk, 3) * 0.08).toFixed(3);
+    
+    const status = baseRisk > 0.75 ? 'CRITICAL' : baseRisk > 0.60 ? 'WARNING' : 'SAFE';
+    const colorClass = status === 'CRITICAL' ? 'text-red-400' : status === 'WARNING' ? 'text-amber-400' : 'text-emerald-400';
+
+    return { piezo, tilt, geo, status, colorClass };
+  };
+
+  const selectedSensors = generateSensorTelemetry(selectedRegion, liveRain, liveMoisture);
 
   const logActionToDatabase = async (actionType, extraData = {}) => {
     setDbStatus("Writing to Atlas...");
@@ -186,11 +184,7 @@ export default function App() {
           ...extraData
         })
       });
-      if (response.ok) {
-        setDbStatus("Atlas Logged");
-      } else {
-        setDbStatus("Atlas Offline");
-      }
+      setDbStatus(response.ok ? "Atlas Logged" : "Atlas Offline");
     } catch {
       setDbStatus("Atlas Synchronized (Local)");
     }
@@ -218,19 +212,14 @@ export default function App() {
       roadStatus: simulatedSusc > 75 ? "CLOSED" : "RESTRICTED",
       faultDistanceKm: Number((1.8 + Math.random() * 5).toFixed(1)),
       polygon: [
-        [latitude + 0.05, longitude - 0.05],
-        [latitude + 0.06, longitude + 0.05],
-        [latitude - 0.04, longitude + 0.04],
-        [latitude - 0.05, longitude - 0.04]
+        [latitude + 0.05, longitude - 0.05], [latitude + 0.06, longitude + 0.05],
+        [latitude - 0.04, longitude + 0.04], [latitude - 0.05, longitude - 0.04]
       ]
     };
-
     setRegions(prev => [newSector, ...prev]);
     setSelectedRegion(newSector);
     logActionToDatabase(`PIN_LOCATION_${name}`, { lat: latitude, lng: longitude });
-    setNewLocName("");
-    setNewLat("");
-    setNewLng("");
+    setNewLocName(""); setNewLat(""); setNewLng("");
   };
 
   const triggerSiren = () => {
@@ -238,9 +227,7 @@ export default function App() {
     logActionToDatabase("EVACUATION_SIREN_TRIGGERED");
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(
-        `Critical Danger. Landslide threat index reached ${calculatedRisk} percent for ${selectedRegion.name}. Initiating citizen evacuation protocol.`
-      );
+      const utterance = new SpeechSynthesisUtterance(`Critical Danger. Landslide threat index reached ${calculatedRisk} percent for ${selectedRegion.name}. Initiating citizen evacuation protocol.`);
       utterance.rate = 0.95;
       window.speechSynthesis.speak(utterance);
     }
@@ -249,12 +236,7 @@ export default function App() {
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#070d18] text-slate-200 font-sans text-xs select-none">
       
-      {showFieldView && (
-        <FieldReporter 
-          onBack={() => setShowFieldView(false)} 
-          onReportSubmitted={(rep) => handleAddNewLocation(rep.lat, rep.lng, rep.name)} 
-        />
-      )}
+      {showFieldView && <FieldReporter onBack={() => setShowFieldView(false)} onReportSubmitted={(rep) => handleAddNewLocation(rep.lat, rep.lng, rep.name)} />}
 
       {/* RESEARCH CITATIONS & ACTION MODALS */}
       {modalState && (
@@ -267,9 +249,7 @@ export default function App() {
                 {modalState === 'SHELTERS' && <ShieldCheck className="w-4 h-4 text-emerald-400" />}
                 {modalState === 'PAPERS' ? "Research Citations & Geomorphological Datasets" : modalState === 'NDRF' ? "NDRF Tactical Command Uplink" : "Safe Corridors & Shelters"}
               </h3>
-              <button onClick={() => setModalState(null)} className="text-slate-400 hover:text-white">
-                <X className="w-4 h-4" />
-              </button>
+              <button onClick={() => setModalState(null)} className="text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
             </div>
 
             {modalState === 'PAPERS' && (
@@ -277,15 +257,11 @@ export default function App() {
                 <p className="text-cyan-400 font-semibold">Underlying Datasets and Academic Peer-Reviewed Literature:</p>
                 <div className="p-2.5 bg-[#070d18] rounded border border-slate-800 space-y-1">
                   <p className="font-bold text-white">1. National Landslide Susceptibility Mapping (NLSM)</p>
-                  <p className="text-slate-400 text-[10px]">Geological Survey of India (GSI), Ministry of Mines, Govt. of India (1:50,000 baseline GIS geodatabase).</p>
+                  <p className="text-slate-400 text-[10px]">Geological Survey of India (GSI), Ministry of Mines, Govt. of India.</p>
                 </div>
                 <div className="p-2.5 bg-[#070d18] rounded border border-slate-800 space-y-1">
                   <p className="font-bold text-white">2. High-Resolution Indian Landslide Susceptibility Model (ILSM 100m)</p>
-                  <p className="text-slate-400 text-[10px]">Mathew et al., Indian Institute of Technology Delhi (IIT-D). Ensemble Machine Learning for Orographic Slope Stability.</p>
-                </div>
-                <div className="p-2.5 bg-[#070d18] rounded border border-slate-800 space-y-1">
-                  <p className="font-bold text-white">3. Copernicus & NASA ALOS-PALSAR Digital Elevation Model (30m DEM)</p>
-                  <p className="text-slate-400 text-[10px]">Used for Topographic Wetness Index (TWI), Slope Gradient, and Flow Accumulation computation.</p>
+                  <p className="text-slate-400 text-[10px]">Mathew et al., Indian Institute of Technology Delhi (IIT-D).</p>
                 </div>
                 <button onClick={() => setModalState(null)} className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 font-bold text-white rounded-lg">Close</button>
               </div>
@@ -293,18 +269,15 @@ export default function App() {
 
             {modalState === 'NDRF' && (
               <div className="space-y-3 text-slate-300 text-[11px]">
-                <p>Generating tactical CAP payload for <strong>NDRF 1st & 12th Battalions (Northeast Command)</strong>:</p>
+                <p>Generating tactical CAP payload for <strong>NDRF 1st & 12th Battalions</strong>:</p>
                 <div className="bg-[#070d18] p-3 rounded font-mono text-[10px] space-y-1 text-cyan-300 border border-slate-800">
                   <p>• SECTOR: {selectedRegion.name} ({selectedRegion.state})</p>
                   <p>• GPS COORD: {selectedRegion.lat.toFixed(4)}°N, {selectedRegion.lng.toFixed(4)}°E</p>
-                  <p>• COMPOSITE THREAT: {calculatedRisk} / 100 (CRITICAL LEVEL)</p>
-                  <p>• BEDROCK LITHOLOGY: {selectedRegion.lithology}</p>
-                  <p>• CRITICAL ACCESS: {selectedRegion.road} [{selectedRegion.roadStatus}]</p>
+                  <p>• THREAT: {calculatedRisk} / 100 (CRITICAL LEVEL)</p>
+                  <p>• PORE PRESSURE: {selectedSensors.piezo} kPa</p>
+                  <p>• SLOPE TILT: {selectedSensors.tilt}° / hr</p>
                 </div>
-                <button 
-                  onClick={() => { logActionToDatabase("NDRF_DISPATCH_TRANSMITTED"); alert(`Encrypted CAP dispatch sent to NDRF command center.`); setModalState(null); }}
-                  className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg"
-                >
+                <button onClick={() => { logActionToDatabase("NDRF_DISPATCH_TRANSMITTED"); alert(`Encrypted CAP dispatch sent to NDRF command center.`); setModalState(null); }} className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg">
                   Transmit Encrypted Dispatch & Log to Atlas
                 </button>
               </div>
@@ -315,16 +288,9 @@ export default function App() {
                 <div className="p-2.5 bg-[#070d18] rounded border border-emerald-900/60 flex justify-between items-center">
                   <div>
                     <p className="font-bold text-white">High Elevation Relief Camp Alpha</p>
-                    <p className="text-[10px] text-slate-400">Dist: 3.4 km • Verified beyond debris flow runout path</p>
+                    <p className="text-[10px] text-slate-400">Dist: 3.4 km • Beyond debris flow runout path</p>
                   </div>
                   <span className="text-emerald-400 font-bold">Cap: 450 / 800</span>
-                </div>
-                <div className="p-2.5 bg-[#070d18] rounded border border-emerald-900/60 flex justify-between items-center">
-                  <div>
-                    <p className="font-bold text-white">District Community Hall Relief Center</p>
-                    <p className="text-[10px] text-slate-400">Dist: 6.8 km • Stable geological bedrock plateau</p>
-                  </div>
-                  <span className="text-emerald-400 font-bold">Cap: 120 / 300</span>
                 </div>
                 <button onClick={() => setModalState(null)} className="w-full py-2 bg-emerald-600 font-bold text-white rounded-lg">Close</button>
               </div>
@@ -333,7 +299,7 @@ export default function App() {
         </div>
       )}
 
-      {/* 1. LEFT NAVIGATION BAR */}
+      {/* LEFT NAVIGATION BAR */}
       <aside className="w-56 bg-[#0a1120] border-r border-slate-800 flex flex-col justify-between p-3 shrink-0">
         <div>
           <div className="flex items-center gap-2.5 pb-4 border-b border-slate-800/80">
@@ -356,65 +322,26 @@ export default function App() {
               <button
                 key={item.key}
                 onClick={() => { setActiveTab(item.key); logActionToDatabase(`VIEW_TAB_${item.key}`); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition text-left ${
-                  activeTab === item.key 
-                    ? "bg-[#14233c] text-cyan-400 border border-cyan-500/30 font-bold" 
-                    : "text-slate-400 hover:bg-[#0f192b] hover:text-slate-200"
-                }`}
+                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition text-left ${activeTab === item.key ? "bg-[#14233c] text-cyan-400 border border-cyan-500/30 font-bold" : "text-slate-400 hover:bg-[#0f192b] hover:text-slate-200"}`}
               >
-                <item.icon className="w-3.5 h-3.5" />
-                <span>{item.label}</span>
+                <item.icon className="w-3.5 h-3.5" /> <span>{item.label}</span>
               </button>
             ))}
-
-            <button
-              onClick={() => { setModalState('PAPERS'); logActionToDatabase("VIEW_RESEARCH_PAPERS"); }}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium text-purple-400 hover:bg-[#19152e] transition text-left"
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>Research Citations</span>
+            <button onClick={() => { setModalState('PAPERS'); logActionToDatabase("VIEW_RESEARCH_PAPERS"); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium text-purple-400 hover:bg-[#19152e] transition text-left">
+              <BookOpen className="w-3.5 h-3.5" /> <span>Research Citations</span>
             </button>
           </nav>
         </div>
 
         {/* Dynamic Location Add Form */}
         <div className="bg-[#0f1a2e] border border-slate-800 p-2.5 rounded-lg space-y-2">
-          <p className="text-[10px] text-cyan-400 font-bold flex items-center gap-1">
-            <Plus className="w-3 h-3" /> Track Custom Location
-          </p>
-          <input 
-            type="text" 
-            placeholder="Place / Village Name" 
-            value={newLocName}
-            onChange={(e) => setNewLocName(e.target.value)}
-            className="w-full bg-[#070d18] border border-slate-700 text-[10px] px-2 py-1 rounded text-white"
-          />
+          <p className="text-[10px] text-cyan-400 font-bold flex items-center gap-1"><Plus className="w-3 h-3" /> Track Custom Location</p>
+          <input type="text" placeholder="Place / Village Name" value={newLocName} onChange={(e) => setNewLocName(e.target.value)} className="w-full bg-[#070d18] border border-slate-700 text-[10px] px-2 py-1 rounded text-white" />
           <div className="flex gap-1">
-            <input 
-              type="number" 
-              placeholder="Lat (22-29)" 
-              value={newLat}
-              onChange={(e) => setNewLat(e.target.value)}
-              className="w-1/2 bg-[#070d18] border border-slate-700 text-[10px] px-1.5 py-1 rounded text-white"
-            />
-            <input 
-              type="number" 
-              placeholder="Lng (89-96)" 
-              value={newLng}
-              onChange={(e) => setNewLng(e.target.value)}
-              className="w-1/2 bg-[#070d18] border border-slate-700 text-[10px] px-1.5 py-1 rounded text-white"
-            />
+            <input type="number" placeholder="Lat (22-29)" value={newLat} onChange={(e) => setNewLat(e.target.value)} className="w-1/2 bg-[#070d18] border border-slate-700 text-[10px] px-1.5 py-1 rounded text-white" />
+            <input type="number" placeholder="Lng (89-96)" value={newLng} onChange={(e) => setNewLng(e.target.value)} className="w-1/2 bg-[#070d18] border border-slate-700 text-[10px] px-1.5 py-1 rounded text-white" />
           </div>
-          <button
-            onClick={() => {
-              if (newLat && newLng) {
-                handleAddNewLocation(newLat, newLng, newLocName);
-              } else {
-                alert("Enter valid coordinates or click directly on the map!");
-              }
-            }}
-            className="w-full py-1.5 bg-cyan-600 hover:bg-cyan-500 font-bold text-white rounded text-[10px] transition"
-          >
+          <button onClick={() => { if (newLat && newLng) { handleAddNewLocation(newLat, newLng, newLocName); } else { alert("Enter valid coordinates!"); } }} className="w-full py-1.5 bg-cyan-600 hover:bg-cyan-500 font-bold text-white rounded text-[10px] transition">
             Deploy Tracking Radar
           </button>
           <div className="flex items-center justify-between text-[9px] text-slate-500 pt-1">
@@ -423,47 +350,42 @@ export default function App() {
         </div>
       </aside>
 
-      {/* 2. MAIN CENTER AREA */}
+      {/* MAIN CENTER AREA */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         
         {/* Siren Alert Strip */}
         {sirenActive && (
           <div className="bg-red-600 text-white px-4 py-2 font-bold flex items-center justify-between animate-pulse shrink-0">
-            <span className="flex items-center gap-2 text-xs">
-              <AlertTriangle className="w-4 h-4" /> EVACUATION SIREN TRANSMITTING TO CITIZEN CELL BROADCAST
-            </span>
+            <span className="flex items-center gap-2 text-xs"><AlertTriangle className="w-4 h-4" /> EVACUATION SIREN TRANSMITTING TO CITIZEN CELL BROADCAST</span>
             <button onClick={() => setSirenActive(false)} className="text-xs bg-red-950 px-2 py-0.5 rounded hover:bg-black">Dismiss</button>
           </div>
         )}
 
-        {/* Top Status Bar & KPIs */}
+        {/* Top Status Bar */}
         <div className="p-3 border-b border-slate-800/80 bg-[#0a1222] flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2">
-            <span className="px-2.5 py-1 rounded bg-red-950/80 border border-red-800 text-red-400 font-bold flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5" /> ACTIVE HAZARD ZONE
+            <span className={`px-2.5 py-1 rounded font-bold flex items-center gap-1.5 border ${selectedSensors.status === 'CRITICAL' ? 'bg-red-950/80 border-red-800 text-red-400' : 'bg-emerald-950/80 border-emerald-800 text-emerald-400'}`}>
+              {selectedSensors.status === 'CRITICAL' ? <AlertTriangle className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+              {selectedSensors.status === 'CRITICAL' ? 'ACTIVE HAZARD ZONE' : 'STABLE SECTOR'}
             </span>
             <span className="text-slate-400 text-[11px]">Focus: <strong className="text-white">{selectedRegion.name}</strong> ({selectedRegion.state})</span>
           </div>
-
           <div className="flex items-center gap-2">
             <div className="bg-[#0f1a2e] border border-red-900/50 px-3 py-1.5 rounded-lg text-center min-w-[70px]">
-              <p className="text-sm font-black text-red-500">{regions.filter(r => r.baseSusceptibility >= 75).length}</p>
+              <p className="text-sm font-black text-red-500">{regions.filter(r => generateSensorTelemetry(r, liveRain, liveMoisture).status === 'CRITICAL').length}</p>
               <p className="text-[9px] text-slate-400 uppercase font-semibold">High Hazard</p>
             </div>
             <div className="bg-[#0f1a2e] border border-cyan-900/50 px-3 py-1.5 rounded-lg text-center min-w-[70px]">
               <p className="text-sm font-black text-cyan-400">{regions.length}</p>
               <p className="text-[9px] text-slate-400 uppercase font-semibold">Tracked Nodes</p>
             </div>
-            <button
-              onClick={() => setShowFieldView(true)}
-              className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1.5 transition ml-1"
-            >
+            <button onClick={() => setShowFieldView(true)} className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1.5 transition ml-1">
               <MapPin className="w-3.5 h-3.5" /> Field App (GPS)
             </button>
           </div>
         </div>
 
-        {/* WORKSPACE VIEW ROUTING */}
+        {/* WORKSPACE VIEWS */}
         {activeTab === 'ROADS' ? (
           <div className="p-4 flex-1 flex flex-col gap-3">
             <h2 className="text-sm font-bold text-white uppercase tracking-wider">Strategic Arterial Corridor Status</h2>
@@ -475,19 +397,9 @@ export default function App() {
                     <p className="text-slate-400 text-[10px]">Sector: {r.name}</p>
                   </div>
                   <button 
-                    onClick={() => {
-                      const next = r.roadStatus === 'CLOSED' ? 'RESTRICTED' : r.roadStatus === 'RESTRICTED' ? 'OPEN' : 'CLOSED';
-                      setRegions(prev => prev.map(item => item.id === r.id ? { ...item, roadStatus: next } : item));
-                      logActionToDatabase(`ROAD_STATUS_TOGGLE`, { corridor: r.road, new_status: next });
-                    }}
-                    className={`px-2.5 py-1 rounded text-[10px] font-bold border transition ${
-                      r.roadStatus === 'CLOSED' ? 'bg-red-950 text-red-400 border-red-800' :
-                      r.roadStatus === 'RESTRICTED' ? 'bg-amber-950 text-amber-400 border-amber-800' :
-                      'bg-emerald-950 text-emerald-400 border-emerald-800'
-                    }`}
-                  >
-                    {r.roadStatus}
-                  </button>
+                    onClick={() => { const next = r.roadStatus === 'CLOSED' ? 'RESTRICTED' : r.roadStatus === 'RESTRICTED' ? 'OPEN' : 'CLOSED'; setRegions(prev => prev.map(item => item.id === r.id ? { ...item, roadStatus: next } : item)); logActionToDatabase(`ROAD_STATUS_TOGGLE`, { corridor: r.road, new_status: next }); }}
+                    className={`px-2.5 py-1 rounded text-[10px] font-bold border transition ${r.roadStatus === 'CLOSED' ? 'bg-red-950 text-red-400 border-red-800' : r.roadStatus === 'RESTRICTED' ? 'bg-amber-950 text-amber-400 border-amber-800' : 'bg-emerald-950 text-emerald-400 border-emerald-800'}`}
+                  >{r.roadStatus}</button>
                 </div>
               ))}
             </div>
@@ -496,247 +408,138 @@ export default function App() {
           <div className="p-4 flex-1 flex flex-col gap-3">
             <h2 className="text-sm font-bold text-white uppercase tracking-wider">Automated CAP Emergency Broadcast Feed</h2>
             <div className="space-y-2 mt-2">
-              {regions.map(r => (
-                <div key={r.id} className="bg-[#0a1222] border border-slate-800 p-3 rounded-xl flex justify-between items-center">
+              {regions.filter(r => generateSensorTelemetry(r, liveRain, liveMoisture).status === 'CRITICAL').map(r => (
+                <div key={r.id} className="bg-[#0a1222] border border-slate-800 p-3 rounded-xl flex justify-between items-center border-l-4 border-l-red-500">
                   <div>
                     <p className="font-bold text-red-400 text-xs">CRITICAL WARNING: {r.name}</p>
-                    <p className="text-slate-400 text-[10px]">Sustained slope gradient ({r.slope}°) exceeding shear threshold. Evacuate valley downstream.</p>
+                    <p className="text-slate-400 text-[10px]">Sustained slope gradient ({r.slope}°) exceeding shear threshold due to saturation. Evacuate valley downstream.</p>
                   </div>
-                  <button 
-                    onClick={() => { logActionToDatabase("BROADCAST_ALERT_DISPATCHED", { sector: r.name }); alert(`Broadcast alert transmitted to state civil defense for ${r.name}`); }}
-                    className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-[10px]"
-                  >
+                  <button onClick={() => { logActionToDatabase("BROADCAST_ALERT", { sector: r.name }); alert(`Broadcast transmitted for ${r.name}`); }} className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-[10px]">
                     Broadcast to Citizen SMS
                   </button>
                 </div>
               ))}
+              {regions.filter(r => generateSensorTelemetry(r, liveRain, liveMoisture).status !== 'CRITICAL').length === regions.length && (
+                <div className="p-4 bg-[#0a1222] border border-slate-800 rounded-xl text-slate-400 text-center">No critical broadcast events currently active.</div>
+              )}
             </div>
           </div>
         ) : activeTab === 'SENSORS' ? (
           <div className="p-4 flex-1 flex flex-col gap-3">
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider">Geotechnical Borehole Sensor Array</h2>
+            <h2 className="text-sm font-bold text-white uppercase tracking-wider flex justify-between">
+              <span>Geotechnical Borehole Sensor Array</span>
+              <span className="text-[10px] text-cyan-400 font-mono tracking-normal bg-[#0f1a2e] px-2 py-1 rounded border border-slate-800">GLOBAL PARAMETERS: {liveRain}mm Rain / {liveMoisture}% Saturation</span>
+            </h2>
             <div className="grid grid-cols-3 gap-3 mt-2">
-              {regions.map(r => (
-                <div key={r.id} className="bg-[#0a1222] border border-slate-800 p-3 rounded-xl space-y-2">
-                  <p className="font-bold text-white text-xs">{r.name}</p>
-                  <div className="text-[10px] space-y-1 text-slate-300">
-                    <p>• Piezometer: <span className="font-mono text-cyan-400">142.4 kPa</span></p>
-                    <p>• Tilt Inclinometer: <span className="font-mono text-amber-400">±1.84° / hr</span></p>
-                    <p>• Geophone Vibration: <span className="font-mono text-emerald-400">0.047 mm/s²</span></p>
+              {regions.map(r => {
+                const sensors = generateSensorTelemetry(r, liveRain, liveMoisture);
+                return (
+                  <div key={r.id} className={`bg-[#0a1222] border-t-2 border-slate-800 border-x border-b p-3 rounded-xl space-y-2 ${sensors.status === 'CRITICAL' ? 'border-t-red-500 bg-red-950/10' : sensors.status === 'WARNING' ? 'border-t-amber-500' : 'border-t-emerald-500'}`}>
+                    <div className="flex justify-between items-start">
+                      <p className="font-bold text-white text-xs pr-2">{r.name}</p>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${sensors.status === 'CRITICAL' ? 'bg-red-950 text-red-400' : sensors.status === 'WARNING' ? 'bg-amber-950 text-amber-400' : 'bg-emerald-950 text-emerald-400'}`}>{sensors.status}</span>
+                    </div>
+                    <div className="text-[10px] space-y-1.5 text-slate-300 bg-[#0f1a2e] p-2 rounded border border-slate-800/50">
+                      <p className="flex justify-between">Piezometer: <span className={`font-mono font-bold ${sensors.colorClass}`}>{sensors.piezo} kPa</span></p>
+                      <p className="flex justify-between">Tilt Inclinometer: <span className={`font-mono font-bold ${sensors.colorClass}`}>±{sensors.tilt}°/hr</span></p>
+                      <p className="flex justify-between">Geophone Vibration: <span className={`font-mono font-bold ${sensors.colorClass}`}>{sensors.geo} mm/s²</span></p>
+                    </div>
+                    <button onClick={() => { setSelectedRegion(r); setActiveTab('DASHBOARD'); }} className="w-full py-1.5 bg-[#14233c] hover:bg-[#1a2d4f] text-cyan-400 border border-cyan-500/20 rounded text-[10px] font-bold transition">
+                      View on Main Map
+                    </button>
                   </div>
-                  <button 
-                    onClick={() => { setSelectedRegion(r); setActiveTab('DASHBOARD'); }}
-                    className="w-full py-1 bg-cyan-600/20 text-cyan-400 border border-cyan-500/40 rounded text-[10px] font-bold"
-                  >
-                    View on Main Map
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         ) : (
           /* STANDARD DASHBOARD */
           <div className="flex-1 p-3 grid grid-cols-12 gap-3 min-h-0">
             
-            {/* COLUMN 1: GOOGLE MAPS HYBRID & 3D TERRAIN */}
             <div className="col-span-5 flex flex-col gap-3">
               <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px] flex items-center gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-cyan-400" /> Google Maps Satellite & Terrain
-                  </span>
-
+                  <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px] flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-cyan-400" /> Terrain Intelligence</span>
                   <div className="flex items-center gap-1.5">
-                    <button
-                      onClick={() => {
-                        const next3D = !view3D;
-                        setView3D(next3D);
-                        logActionToDatabase("TOGGLE_3D_VIEW", { view_3d: next3D });
-                      }}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold border transition flex items-center gap-1 ${
-                        view3D ? "bg-cyan-600 text-white border-cyan-400 shadow-md" : "bg-[#14233c] text-slate-400 border-slate-700"
-                      }`}
-                    >
+                    <button onClick={() => { setView3D(!view3D); logActionToDatabase("TOGGLE_3D_VIEW"); }} className={`px-2 py-0.5 rounded text-[10px] font-bold border transition flex items-center gap-1 ${view3D ? "bg-cyan-600 text-white border-cyan-400" : "bg-[#14233c] text-slate-400 border-slate-700"}`}>
                       <Box className="w-3 h-3" /> {view3D ? "Return to Map" : "3D Terrain"}
                     </button>
-
-                    <select 
-                      value={selectedRegion.id}
-                      onChange={(e) => {
-                        const reg = regions.find(r => r.id === e.target.value);
-                        setSelectedRegion(reg);
-                        logActionToDatabase("REGION_CHANGED", { region: reg.name });
-                      }}
-                      className="bg-[#14233c] border border-slate-700 text-[10px] text-slate-300 rounded px-1.5 py-0.5"
-                    >
-                      {regions.map(r => (
-                        <option key={r.id} value={r.id}>{r.name}</option>
-                      ))}
+                    <select value={selectedRegion.id} onChange={(e) => { const reg = regions.find(r => r.id === e.target.value); setSelectedRegion(reg); logActionToDatabase("REGION_CHANGED", { region: reg.name }); }} className="bg-[#14233c] border border-slate-700 text-[10px] text-slate-300 rounded px-1.5 py-0.5">
+                      {regions.map(r => (<option key={r.id} value={r.id}>{r.name}</option>))}
                     </select>
                   </div>
                 </div>
 
-                {/* Map Viewport Container */}
                 <div className="relative flex-1 rounded-lg overflow-hidden border border-slate-800 bg-[#050912] min-h-[280px]">
                   {view3D ? (
-                    <Terrain3D 
-                      regionName={selectedRegion.name} 
-                      riskScore={calculatedRisk} 
-                      slopeAngle={selectedRegion.slope} 
-                    />
+                    <Terrain3D regionName={selectedRegion.name} riskScore={calculatedRisk} slopeAngle={selectedRegion.slope} />
                   ) : (
-                    <MapContainer 
-                      center={[selectedRegion.lat, selectedRegion.lng]} 
-                      zoom={9} 
-                      className="h-full w-full"
-                      scrollWheelZoom={true}
-                      zoomControl={false}
-                    >
+                    <MapContainer center={[selectedRegion.lat, selectedRegion.lng]} zoom={9} className="h-full w-full" scrollWheelZoom={true} zoomControl={false}>
                       <MapController center={[selectedRegion.lat, selectedRegion.lng]} zoomAction={zoomTrigger} />
                       <MapClickHandler onLocationAdd={(lat, lng) => handleAddNewLocation(lat, lng)} />
+                      <TileLayer url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}" attribution="&copy; Google Maps" maxZoom={20} />
+                      <Circle center={[selectedRegion.lat, selectedRegion.lng]} radius={scanRadiusKm * 1000} pathOptions={{ color: '#06b6d4', fillColor: '#06b6d4', fillOpacity: 0.12, dashArray: '4, 6' }} />
+                      
+                      {regions.map(r => {
+                        const isDanger = generateSensorTelemetry(r, liveRain, liveMoisture).status === 'CRITICAL';
+                        return (
+                          <Polygon key={`poly-${r.id}`} positions={r.polygon} pathOptions={{ color: isDanger ? '#ef4444' : '#f59e0b', fillColor: isDanger ? '#ef4444' : '#f59e0b', fillOpacity: 0.40, weight: 1.5, dashArray: '3, 4' }} />
+                        )
+                      })}
 
-                      {/* High-Resolution Google Maps Hybrid Tiles */}
-                      <TileLayer
-                        url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}"
-                        attribution="&copy; Google Maps"
-                        maxZoom={20}
-                      />
-
-                      {/* Proximity Radius Circle */}
-                      <Circle 
-                        center={[selectedRegion.lat, selectedRegion.lng]}
-                        radius={scanRadiusKm * 1000}
-                        pathOptions={{
-                          color: '#06b6d4',
-                          fillColor: '#06b6d4',
-                          fillOpacity: 0.12,
-                          dashArray: '4, 6'
-                        }}
-                      />
-
-                      {/* GSI Hazard Polygons */}
-                      {regions.map(r => (
-                        <Polygon 
-                          key={`poly-${r.id}`}
-                          positions={r.polygon}
-                          pathOptions={{
-                            color: r.baseSusceptibility > 75 ? '#ef4444' : '#f59e0b',
-                            fillColor: r.baseSusceptibility > 75 ? '#ef4444' : '#f59e0b',
-                            fillOpacity: 0.40,
-                            weight: 1.5,
-                            dashArray: '3, 4'
-                          }}
-                        />
-                      ))}
-
-                      {/* Sensor Pins */}
                       {regions.map((r) => {
                         const isTarget = r.id === selectedRegion.id;
+                        const isDanger = generateSensorTelemetry(r, liveRain, liveMoisture).status === 'CRITICAL';
                         return (
-                          <CircleMarker
-                            key={r.id}
-                            center={[r.lat, r.lng]}
-                            radius={isTarget ? 11 : 6}
-                            pathOptions={{
-                              color: r.baseSusceptibility > 75 ? '#ef4444' : '#f59e0b',
-                              fillColor: r.baseSusceptibility > 75 ? '#ef4444' : '#f59e0b',
-                              fillOpacity: 0.95
-                            }}
-                            eventHandlers={{ 
-                              click: () => { 
-                                setSelectedRegion(r); 
-                                logActionToDatabase("SENSOR_PIN_SELECTED", { selected: r.name }); 
-                              } 
-                            }}
-                          >
-                            <Popup>
-                              <div className="text-slate-900 text-[11px] font-sans">
-                                <p className="font-bold">{r.name}</p>
-                                <p>Slope: {r.slope}° • Lithology: {r.lithology}</p>
-                              </div>
-                            </Popup>
+                          <CircleMarker key={r.id} center={[r.lat, r.lng]} radius={isTarget ? 11 : 6} pathOptions={{ color: isDanger ? '#ef4444' : '#10b981', fillColor: isDanger ? '#ef4444' : '#10b981', fillOpacity: 0.95 }} eventHandlers={{ click: () => { setSelectedRegion(r); logActionToDatabase("PIN_SELECTED", { selected: r.name }); } }}>
+                            <Popup><div className="text-slate-900 text-[11px] font-sans"><p className="font-bold">{r.name}</p><p>Slope: {r.slope}° • Lithology: {r.lithology}</p></div></Popup>
                           </CircleMarker>
                         );
                       })}
                     </MapContainer>
                   )}
 
-                  {/* Operational Zoom Controls */}
                   <div className="absolute top-2 right-2 flex flex-col gap-1 z-[400]">
-                    <button 
-                      onClick={() => { setZoomTrigger('IN'); setTimeout(() => setZoomTrigger(null), 100); }} 
-                      className="p-1.5 bg-[#0a1222]/90 border border-slate-700 hover:bg-slate-700 rounded text-cyan-400 transition"
-                      title="Zoom In"
-                    >
-                      <ZoomIn className="w-3.5 h-3.5" />
-                    </button>
-                    <button 
-                      onClick={() => { setZoomTrigger('OUT'); setTimeout(() => setZoomTrigger(null), 100); }} 
-                      className="p-1.5 bg-[#0a1222]/90 border border-slate-700 hover:bg-slate-700 rounded text-cyan-400 transition"
-                      title="Zoom Out"
-                    >
-                      <ZoomOut className="w-3.5 h-3.5" />
-                    </button>
+                    <button onClick={() => { setZoomTrigger('IN'); setTimeout(() => setZoomTrigger(null), 100); }} className="p-1.5 bg-[#0a1222]/90 border border-slate-700 hover:bg-slate-700 rounded text-cyan-400"><ZoomIn className="w-3.5 h-3.5" /></button>
+                    <button onClick={() => { setZoomTrigger('OUT'); setTimeout(() => setZoomTrigger(null), 100); }} className="p-1.5 bg-[#0a1222]/90 border border-slate-700 hover:bg-slate-700 rounded text-cyan-400"><ZoomOut className="w-3.5 h-3.5" /></button>
                   </div>
-
                   <div className="absolute top-2 left-2 bg-[#0a1222]/90 backdrop-blur border border-slate-700/80 p-2 rounded text-[10px] pointer-events-none z-[400] space-y-0.5">
-                    <p className="font-bold text-cyan-400">● {scanRadiusKm} km Proximity Radar Active</p>
-                    <p className="text-slate-300">Click anywhere on terrain to pin a new node</p>
+                    <p className="font-bold text-cyan-400">● {scanRadiusKm} km Radar Active</p>
+                    <p className="text-slate-300">Click map to drop custom sensor</p>
                   </div>
                 </div>
 
-                {/* Road Corridor Bar */}
                 <div className="mt-2 bg-[#0f1a2e] border border-slate-800 p-2 rounded-lg flex justify-between items-center text-[11px]">
                   <div>
                     <p className="text-[9px] text-slate-400 uppercase font-bold">Lifeline Artery</p>
                     <p className="font-medium text-slate-200">{selectedRegion.road}</p>
                   </div>
-                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                    selectedRegion.roadStatus === 'CLOSED' ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-amber-950 text-amber-400 border border-amber-800'
-                  }`}>
-                    {selectedRegion.roadStatus}
-                  </span>
+                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${selectedRegion.roadStatus === 'CLOSED' ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-amber-950 text-amber-400 border border-amber-800'}`}>{selectedRegion.roadStatus}</span>
                 </div>
               </div>
             </div>
 
-            {/* COLUMN 2: SENSORS & RADAR DANGERS */}
             <div className="col-span-4 flex flex-col gap-3">
               <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col">
                 <div className="flex justify-between items-center mb-1">
                   <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px]">Saturation Matrix</span>
-                  <span className="text-[10px] text-cyan-400 font-mono bg-[#0f1a2e] px-2 py-0.5 rounded border border-slate-800">
-                    {selectedRegion.name.slice(0, 18)}...
-                  </span>
+                  <span className="text-[10px] text-cyan-400 font-mono bg-[#0f1a2e] px-2 py-0.5 rounded border border-slate-800">{selectedRegion.name.slice(0, 18)}...</span>
                 </div>
 
-                {/* Interactive Sliders */}
                 <div className="grid grid-cols-4 gap-1.5 my-2 text-center">
                   <div className="bg-[#0f1a2e] p-1.5 rounded border border-slate-800">
-                    <p className="text-[9px] text-slate-400">Rainfall</p>
-                    <p className="font-bold text-cyan-400">{liveRain} mm</p>
-                    <input 
-                      type="range" min="0" max="250" value={liveRain} 
-                      onChange={(e) => setLiveRain(Number(e.target.value))} 
-                      className="w-full accent-cyan-400 cursor-pointer h-1" 
-                    />
+                    <p className="text-[9px] text-slate-400">Rainfall</p><p className="font-bold text-cyan-400">{liveRain} mm</p>
+                    <input type="range" min="0" max="250" value={liveRain} onChange={(e) => setLiveRain(Number(e.target.value))} className="w-full accent-cyan-400 cursor-pointer h-1" />
                   </div>
                   <div className="bg-[#0f1a2e] p-1.5 rounded border border-slate-800">
-                    <p className="text-[9px] text-slate-400">Saturation</p>
-                    <p className="font-bold text-amber-400">{liveMoisture}%</p>
-                    <input 
-                      type="range" min="0" max="100" value={liveMoisture} 
-                      onChange={(e) => setLiveMoisture(Number(e.target.value))} 
-                      className="w-full accent-amber-400 cursor-pointer h-1" 
-                    />
+                    <p className="text-[9px] text-slate-400">Saturation</p><p className="font-bold text-amber-400">{liveMoisture}%</p>
+                    <input type="range" min="0" max="100" value={liveMoisture} onChange={(e) => setLiveMoisture(Number(e.target.value))} className="w-full accent-amber-400 cursor-pointer h-1" />
                   </div>
                   <div className="bg-[#0f1a2e] p-1.5 rounded border border-slate-800">
-                    <p className="text-[9px] text-slate-400">Slope</p>
-                    <p className="font-bold text-slate-200 mt-1">{selectedRegion.slope}°</p>
+                    <p className="text-[9px] text-slate-400">Slope</p><p className="font-bold text-slate-200 mt-1">{selectedRegion.slope}°</p>
                   </div>
-                  <div className="bg-[#0f1a2e] p-1.5 rounded border border-slate-800">
-                    <p className="text-[9px] text-slate-400">Threat</p>
-                    <p className="font-bold text-red-500 mt-1">{calculatedRisk}/100</p>
+                  <div className={`bg-[#0f1a2e] p-1.5 rounded border border-slate-800 ${selectedSensors.status === 'CRITICAL' ? 'border-red-900 bg-red-950/20' : ''}`}>
+                    <p className="text-[9px] text-slate-400">Threat</p><p className={`font-bold mt-1 ${selectedSensors.colorClass}`}>{calculatedRisk}/100</p>
                   </div>
                 </div>
 
@@ -753,51 +556,42 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Dynamic Proximity Threat Radius Scanner */}
               <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col justify-between">
                 <div className="flex justify-between items-center mb-1">
-                  <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px] flex items-center gap-1">
-                    <Radar className="w-3.5 h-3.5 text-cyan-400" /> Nearby Threat Radar ({scanRadiusKm} km)
-                  </span>
-                  <select 
-                    value={scanRadiusKm} 
-                    onChange={(e) => setScanRadiusKm(Number(e.target.value))}
-                    className="bg-[#070d18] text-cyan-400 border border-slate-800 text-[10px] rounded px-1"
-                  >
-                    <option value={15}>15 km</option>
-                    <option value={25}>25 km</option>
-                    <option value={50}>50 km</option>
+                  <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px] flex items-center gap-1"><Radar className="w-3.5 h-3.5 text-cyan-400" /> Radar ({scanRadiusKm} km)</span>
+                  <select value={scanRadiusKm} onChange={(e) => setScanRadiusKm(Number(e.target.value))} className="bg-[#070d18] text-cyan-400 border border-slate-800 text-[10px] rounded px-1">
+                    <option value={15}>15 km</option><option value={25}>25 km</option><option value={50}>50 km</option>
                   </select>
                 </div>
 
                 <div className="space-y-1.5 overflow-y-auto max-h-[120px] pr-1">
                   {proximateDangers.length === 0 ? (
-                    <div className="p-2 bg-[#0f1a2e] rounded text-[10px] text-slate-400 text-center">
-                      No adjacent critical shear planes within {scanRadiusKm} km.
-                    </div>
+                    <div className="p-2 bg-[#0f1a2e] rounded text-[10px] text-slate-400 text-center">No critical shear planes within {scanRadiusKm} km.</div>
                   ) : (
-                    proximateDangers.map(d => (
-                      <div key={d.id} className="p-1.5 bg-[#0f1a2e] rounded border border-slate-800 flex justify-between items-center text-[10px]">
-                        <div>
-                          <p className="font-bold text-white">{d.name.slice(0, 22)}...</p>
-                          <p className="text-[9px] text-slate-400">Distance: {d.distance} km • Slope: {d.slope}°</p>
+                    proximateDangers.map(d => {
+                      const dSensors = generateSensorTelemetry(d, liveRain, liveMoisture);
+                      return (
+                        <div key={d.id} className="p-1.5 bg-[#0f1a2e] rounded border border-slate-800 flex justify-between items-center text-[10px]">
+                          <div>
+                            <p className="font-bold text-white">{d.name.slice(0, 22)}...</p>
+                            <p className="text-[9px] text-slate-400">Dist: {d.distance} km • Slp: {d.slope}°</p>
+                          </div>
+                          <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] ${dSensors.status === 'CRITICAL' ? 'text-red-400 bg-red-950' : 'text-amber-400 bg-amber-950'}`}>
+                            {d.baseSusceptibility}% RISK
+                          </span>
                         </div>
-                        <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] ${d.baseSusceptibility > 75 ? 'text-red-400 bg-red-950' : 'text-amber-400 bg-amber-950'}`}>
-                          {d.baseSusceptibility}% RISK
-                        </span>
-                      </div>
-                    ))
+                      )
+                    })
                   )}
                 </div>
               </div>
             </div>
 
-            {/* COLUMN 3: GEOPHONE TELEMETRY & EMERGENCY DISPATCH */}
             <div className="col-span-3 flex flex-col gap-3">
               <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col justify-between">
                 <div className="flex justify-between items-center mb-1.5">
                   <span className="font-bold uppercase tracking-wider text-slate-300 text-[10px]">Geomorphology & Sensors</span>
-                  <span className="text-[9px] text-emerald-400 font-mono animate-pulse">● 10Hz TELEMETRY</span>
+                  <span className={`text-[9px] font-mono animate-pulse ${selectedSensors.status === 'CRITICAL' ? 'text-red-400' : 'text-emerald-400'}`}>● 10Hz TELEMETRY</span>
                 </div>
                 <div className="space-y-1.5 text-[10px]">
                   <div className="p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
@@ -806,44 +600,35 @@ export default function App() {
                   </div>
                   <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
                     <span className="text-slate-400">Nearest Fault</span>
-                    <span className="text-amber-400 font-mono font-bold">{selectedRegion.faultDistanceKm} km</span>
+                    <span className="text-slate-200 font-mono font-bold">{selectedRegion.faultDistanceKm} km</span>
                   </div>
                   <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
-                    <span className="text-slate-400">Pore Pressure (Piezo-04)</span>
-                    <span className="text-cyan-400 font-mono font-bold">144.2 kPa</span>
+                    <span className="text-slate-400">Pore Pressure (Piezo)</span>
+                    <span className={`font-mono font-bold ${selectedSensors.colorClass}`}>{selectedSensors.piezo} kPa</span>
+                  </div>
+                  <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
+                    <span className="text-slate-400">Slope Inclinometer</span>
+                    <span className={`font-mono font-bold ${selectedSensors.colorClass}`}>±{selectedSensors.tilt}° / hr</span>
                   </div>
                   <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
                     <span className="text-slate-400">Acoustic Vibration</span>
-                    <span className="text-emerald-400 font-mono font-bold">0.048 mm/s²</span>
+                    <span className={`font-mono font-bold ${selectedSensors.colorClass}`}>{selectedSensors.geo} mm/s²</span>
                   </div>
                 </div>
               </div>
 
-              {/* Active Emergency Actions */}
               <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
                 <p className="font-bold text-slate-400 uppercase text-[9px]">Emergency Response Actions</p>
                 <div className="grid grid-cols-3 gap-1.5">
-                  <button 
-                    onClick={triggerSiren}
-                    className="bg-red-600 hover:bg-red-500 text-white p-2 rounded-lg font-bold text-[10px] flex flex-col items-center justify-center gap-1 transition shadow-lg shadow-red-950/50"
-                  >
+                  <button onClick={triggerSiren} className="bg-red-600 hover:bg-red-500 text-white p-2 rounded-lg font-bold text-[10px] flex flex-col items-center justify-center gap-1 transition shadow-lg shadow-red-950/50">
                     <Volume2 className="w-3.5 h-3.5" /> Siren
                   </button>
-                  <button 
-                    onClick={() => { setModalState('NDRF'); logActionToDatabase("OPEN_NDRF_MODAL"); }}
-                    className="bg-cyan-600 hover:bg-cyan-500 text-white p-2 rounded-lg font-bold text-[10px] flex flex-col items-center justify-center gap-1 transition shadow-lg shadow-cyan-950/50"
-                  >
+                  <button onClick={() => { setModalState('NDRF'); logActionToDatabase("OPEN_NDRF_MODAL"); }} className="bg-cyan-600 hover:bg-cyan-500 text-white p-2 rounded-lg font-bold text-[10px] flex flex-col items-center justify-center gap-1 transition shadow-lg shadow-cyan-950/50">
                     <PhoneCall className="w-3.5 h-3.5" /> NDRF
                   </button>
-                  <button 
-                    onClick={() => { setModalState('SHELTERS'); logActionToDatabase("OPEN_SHELTERS_MODAL"); }}
-                    className="bg-emerald-600 hover:bg-emerald-500 text-white p-2 rounded-lg font-bold text-[10px] flex flex-col items-center justify-center gap-1 transition shadow-lg shadow-emerald-950/50"
-                  >
+                  <button onClick={() => { setModalState('SHELTERS'); logActionToDatabase("OPEN_SHELTERS_MODAL"); }} className="bg-emerald-600 hover:bg-emerald-500 text-white p-2 rounded-lg font-bold text-[10px] flex flex-col items-center justify-center gap-1 transition shadow-lg shadow-emerald-950/50">
                     <ShieldCheck className="w-3.5 h-3.5" /> Shelters
                   </button>
-                </div>
-                <div className="bg-[#0f1a2e] border border-slate-800 p-2 rounded text-[10px] text-slate-400 leading-tight">
-                  <span className="font-bold text-cyan-400">चेतावनी:</span> {selectedRegion.name} क्षेत्र में तत्काल भूस्खलन सुरक्षा तंत्र सक्रिय है।
                 </div>
               </div>
             </div>
