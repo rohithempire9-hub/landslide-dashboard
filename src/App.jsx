@@ -1,642 +1,71 @@
-import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Popup, useMap, Polygon, Circle, useMapEvents } from 'react-leaflet';
-import { 
-  AlertTriangle, ShieldCheck, CloudRain, Droplets, 
-  MapPin, Radio, Bell, Navigation, Volume2, 
-  Box, Layers, Settings, PhoneCall, X, Activity, 
-  BookOpen, Plus, ZoomIn, ZoomOut, Radar, Database
-} from 'lucide-react';
-import { 
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer 
-} from 'recharts';
-import Terrain3D from './Terrain3D';
+import React, { useEffect, useMemo, useState } from 'react';
+import { MapContainer, TileLayer, CircleMarker, Polygon, Popup, useMap } from 'react-leaflet';
+import { Activity, AlertTriangle, Bell, BookOpen, CheckCircle2, CloudRain, Database, FileWarning, Layers, MapPin, Menu, Navigation, Radio, RefreshCw, Shield, Siren, Smartphone, TrendingUp, Users, X, Zap } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import FieldReporter from './FieldReporter';
 
-const BASE_RESEARCH_REGIONS = [
-  {
-    id: "GSI-AR-01",
-    name: "Bhalukpong - Bomdila Corridor",
-    district: "West Kameng",
-    state: "Arunachal Pradesh",
-    lat: 27.2645,
-    lng: 92.4159,
-    baseSusceptibility: 89,
-    slope: 46,
-    elevation: 2150,
-    lithology: "Precambrian Metamorphic Gneiss",
-    road: "NH-13 (Trans-Arunachal Highway)",
-    roadStatus: "CLOSED",
-    faultDistanceKm: 3.2,
-    polygon: [[27.36, 92.32], [27.38, 92.54], [27.18, 92.56], [27.14, 92.36]]
-  },
-  {
-    id: "GSI-ML-01",
-    name: "Cherrapunji - Mawsynram Escarpment",
-    district: "East Khasi Hills",
-    state: "Meghalaya",
-    lat: 25.2986,
-    lng: 91.5822,
-    baseSusceptibility: 81,
-    slope: 38,
-    elevation: 1430,
-    lithology: "Tertiary Sandstone & Limestone",
-    road: "SH-5 (Cherra-Shella Corridor)",
-    roadStatus: "RESTRICTED",
-    faultDistanceKm: 6.8,
-    polygon: [[25.38, 91.48], [25.40, 91.70], [25.18, 91.68], [25.16, 91.46]]
-  },
-  {
-    id: "GSI-NL-01",
-    name: "Pfutsero - Kohima Ridge",
-    district: "Kohima",
-    state: "Nagaland",
-    lat: 25.6751,
-    lng: 94.1086,
-    baseSusceptibility: 76,
-    slope: 32,
-    elevation: 1444,
-    lithology: "Disang Shale & Turbidites",
-    road: "NH-29 (Dimapur Bypass)",
-    roadStatus: "RESTRICTED",
-    faultDistanceKm: 4.1,
-    polygon: [[25.76, 94.02], [25.79, 94.22], [25.56, 94.20], [25.53, 94.02]]
-  },
-  {
-    id: "GSI-MZ-01",
-    name: "Sairang - Aizawl Syncline",
-    district: "Aizawl",
-    state: "Mizoram",
-    lat: 23.7271,
-    lng: 92.7176,
-    baseSusceptibility: 84,
-    slope: 35,
-    elevation: 1132,
-    lithology: "Bhuban Formation Siltstone",
-    road: "NH-54 (Aizawl-Silchar Link)",
-    roadStatus: "CLOSED",
-    faultDistanceKm: 2.7,
-    polygon: [[23.80, 92.65], [23.82, 92.78], [23.65, 92.79], [23.64, 92.66]]
-  }
+const API = import.meta.env.VITE_API_URL || 'https://bhushakti-backend.onrender.com';
+
+const DEMO_REGIONS = [
+ {id:'GSI-AR-01',name:'Bhalukpong - Bomdila Corridor',district:'West Kameng',state:'Arunachal Pradesh',lat:27.2645,lng:92.4159,susceptibility:89,slope:46,elevation:2150,road:'NH-13',road_status:'CLOSED'},
+ {id:'GSI-ML-01',name:'Cherrapunji - Mawsynram Escarpment',district:'East Khasi Hills',state:'Meghalaya',lat:25.2986,lng:91.5822,susceptibility:81,slope:38,elevation:1430,road:'SH-5',road_status:'RESTRICTED'},
+ {id:'GSI-NL-01',name:'Pfutsero - Kohima Ridge',district:'Kohima',state:'Nagaland',lat:25.6751,lng:94.1086,susceptibility:76,slope:32,elevation:1444,road:'NH-29',road_status:'RESTRICTED'},
+ {id:'GSI-MZ-01',name:'Sairang - Aizawl Syncline',district:'Aizawl',state:'Mizoram',lat:23.7271,lng:92.7176,susceptibility:84,slope:35,elevation:1132,road:'NH-54',road_status:'CLOSED'},
 ];
+const riskScore = r => Math.min(100, Math.round(r.susceptibility*.45 + 90*.25 + 84*.15 + Math.min(r.slope/50*100,100)*.15));
+const riskLevel = n => n>=75?'CRITICAL':n>=55?'HIGH':n>=35?'MODERATE':'LOW';
+const riskClass = n => n>=75?'text-red-400':n>=55?'text-amber-400':'text-emerald-400';
 
-const FORECAST_DATA = [
-  { time: '00:00', rain: 24, threat: 32 },
-  { time: '04:00', rain: 52, threat: 56 },
-  { time: '08:00', rain: 94, threat: 78 },
-  { time: '12:00', rain: 142, threat: 91 },
-  { time: '16:00', rain: 105, threat: 80 },
-  { time: '20:00', rain: 68, threat: 62 },
-];
+function FlyTo({region}) { const map=useMap(); useEffect(()=>{map.flyTo([region.lat,region.lng],8,{duration:.8})},[region,map]); return null; }
+function Stat({icon:Icon,label,value,sub,tone='cyan'}) { return <div className="panel p-3"><div className="flex items-center justify-between"><div><p className="muted uppercase tracking-widest text-[9px]">{label}</p><p className="text-xl font-black text-white mt-1">{value}</p><p className="muted text-[9px] mt-1">{sub}</p></div><div className={`p-2 rounded-lg bg-${tone}-500/10`}><Icon className={`w-4 h-4 text-${tone}-400`}/></div></div></div> }
+function Badge({children,critical=false}) { return <span className={`px-2 py-1 rounded-md text-[9px] font-black tracking-wider ${critical?'bg-red-500/15 text-red-400 border border-red-500/30':'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20'}`}>{children}</span> }
 
-function MapController({ center, zoomAction }) {
-  const map = useMap();
-  useEffect(() => {
-    map.flyTo(center, 9, { duration: 1.2 });
-  }, [center, map]);
+export default function App(){
+ const [regions,setRegions]=useState(DEMO_REGIONS); const [selected,setSelected]=useState(DEMO_REGIONS[0]);
+ const [incidents,setIncidents]=useState([]); const [summary,setSummary]=useState(null); const [tab,setTab]=useState('COMMAND');
+ const [field,setField]=useState(false); const [notice,setNotice]=useState(''); const [loading,setLoading]=useState(true); const [lang,setLang]=useState('EN');
+ const [siren,setSiren]=useState(false);
 
-  useEffect(() => {
-    if (zoomAction === 'IN') map.zoomIn();
-    if (zoomAction === 'OUT') map.zoomOut();
-  }, [zoomAction, map]);
+ const load=async()=>{setLoading(true); try{ const [r,s,i]=await Promise.all([fetch(`${API}/api/regions`),fetch(`${API}/api/dashboard/summary`),fetch(`${API}/api/incidents`)]); if(r.ok)setRegions(await r.json()); if(s.ok)setSummary(await s.json()); if(i.ok)setIncidents(await i.json()); setNotice('LIVE API CONNECTED'); }catch{setNotice('DEMO MODE · API UNAVAILABLE')} finally{setLoading(false)}};
+ useEffect(()=>{load()},[]);
+ const score=useMemo(()=>riskScore(selected),[selected]); const level=riskLevel(score);
+ const critical=regions.filter(r=>riskScore(r)>=75).length; const high=regions.filter(r=>riskScore(r)>=55&&riskScore(r)<75).length;
+ const forecast=summary?.forecast||[{time:'00:00',rain:24,risk:32},{time:'04:00',rain:52,risk:48},{time:'08:00',rain:94,risk:69},{time:'12:00',rain:142,risk:86},{time:'16:00',rain:105,risk:78},{time:'20:00',rain:68,risk:59}];
+ const logAction=async action=>{try{await fetch(`${API}/api/log-action`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sector_name:selected.name,lat:selected.lat,lng:selected.lng,risk_score:score,action_triggered:action})})}catch{}};
+ const triggerSiren=()=>{setSiren(true);logAction('EVACUATION_WARNING_TRIGGERED');setNotice('EVACUATION WARNING SENT · DEMO ACTION');if('speechSynthesis'in window){speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(`Warning. Landslide risk is ${score} percent at ${selected.name}. Follow evacuation instructions.`))}};
+ const submitReport=rep=>{setIncidents(x=>[rep,...x]);setField(false);setSelected({id:rep.id,name:rep.sector_name||rep.name,district:rep.district||'Field Report',state:rep.state||'NER',lat:rep.lat,lng:rep.lng,susceptibility:Math.max(score,70),slope:selected.slope,elevation:selected.elevation,road:'Field observation',road_status:'REVIEW'});setNotice('FIELD REPORT RECEIVED · MAP UPDATED')};
 
-  return null;
-}
-
-function MapClickHandler({ onLocationAdd }) {
-  useMapEvents({
-    click(e) {
-      onLocationAdd(e.latlng.lat, e.latlng.lng);
-    }
-  });
-  return null;
-}
-
-export default function App() {
-  const [regions, setRegions] = useState(BASE_RESEARCH_REGIONS);
-  const [selectedRegion, setSelectedRegion] = useState(BASE_RESEARCH_REGIONS[0]);
-  const [liveRain, setLiveRain] = useState(135);
-  const [liveMoisture, setLiveMoisture] = useState(84);
-  const [view3D, setView3D] = useState(false);
-  const [activeTab, setActiveTab] = useState("DASHBOARD");
-  const [showFieldView, setShowFieldView] = useState(false);
-  const [modalState, setModalState] = useState(null);
-  const [sirenActive, setSirenActive] = useState(false);
-  const [scanRadiusKm, setScanRadiusKm] = useState(25);
-  const [zoomTrigger, setZoomTrigger] = useState(null);
-  const [dbStatus, setDbStatus] = useState("Atlas Idle");
-
-  const [newLocName, setNewLocName] = useState("");
-  const [newLat, setNewLat] = useState("");
-  const [newLng, setNewLng] = useState("");
-
-  const BACKEND_URL = "https://bhushakti-backend.onrender.com";
-
-  // Haversine Proximity Calculation
-  const getDistanceKm = (lat1, lon1, lat2, lon2) => {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-    return Number((R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))).toFixed(1));
-  };
-
-  const proximateDangers = regions
-    .filter(r => r.id !== selectedRegion.id)
-    .map(r => ({ ...r, distance: getDistanceKm(selectedRegion.lat, selectedRegion.lng, r.lat, r.lng) }))
-    .filter(r => r.distance <= scanRadiusKm)
-    .sort((a, b) => a.distance - b.distance);
-
-  const calculatedRisk = Math.min(100, Math.round(selectedRegion.baseSusceptibility * 0.40 + Math.min(liveRain * 0.8, 50) * 0.35 + (liveMoisture * 0.4) * 0.15 + (selectedRegion.slope * 0.8) * 0.10));
-
-  // DYNAMIC SENSOR PHYSICS ENGINE
-  const generateSensorTelemetry = (region, currentRain, currentMoisture) => {
-    const baseRisk = (region.baseSusceptibility * 0.4 + currentRain * 0.3 + currentMoisture * 0.3) / 100;
-    
-    // Pore Pressure rises with moisture and rain
-    const piezo = (40 + (currentMoisture * 0.8) + (currentRain * 0.3) + (region.baseSusceptibility * 0.15)).toFixed(1);
-    
-    // Tilt increases exponentially with slope angle and saturation
-    const tilt = (0.05 + (baseRisk * region.slope * 0.04)).toFixed(2);
-    
-    // Geophone detects micro-fractures (spikes dramatically when risk is high)
-    const geo = (0.002 + Math.pow(baseRisk, 3) * 0.08).toFixed(3);
-    
-    const status = baseRisk > 0.75 ? 'CRITICAL' : baseRisk > 0.60 ? 'WARNING' : 'SAFE';
-    const colorClass = status === 'CRITICAL' ? 'text-red-400' : status === 'WARNING' ? 'text-amber-400' : 'text-emerald-400';
-
-    return { piezo, tilt, geo, status, colorClass };
-  };
-
-  const selectedSensors = generateSensorTelemetry(selectedRegion, liveRain, liveMoisture);
-
-  const logActionToDatabase = async (actionType, extraData = {}) => {
-    setDbStatus("Writing to Atlas...");
-    try {
-      const response = await fetch(`${BACKEND_URL}/api/log-action`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sector_name: selectedRegion.name,
-          lat: selectedRegion.lat,
-          lng: selectedRegion.lng,
-          risk_score: calculatedRisk,
-          action_triggered: actionType,
-          ...extraData
-        })
-      });
-      setDbStatus(response.ok ? "Atlas Logged" : "Atlas Offline");
-    } catch {
-      setDbStatus("Atlas Synchronized (Local)");
-    }
-  };
-
-  const handleAddNewLocation = (lat, lng, customName) => {
-    const latitude = Number(lat);
-    const longitude = Number(lng);
-    const name = customName || `Northeast Sensor #${Math.floor(100 + Math.random() * 900)}`;
-    const simulatedSlope = Math.floor(28 + Math.random() * 22);
-    const simulatedSusc = Math.min(95, Math.floor(65 + simulatedSlope * 0.65));
-
-    const newSector = {
-      id: `USER-LOC-${Date.now().toString().slice(-4)}`,
-      name: name,
-      district: "Strategic Border Sector",
-      state: "Northeast Territory",
-      lat: latitude,
-      lng: longitude,
-      baseSusceptibility: simulatedSusc,
-      slope: simulatedSlope,
-      elevation: Math.floor(950 + Math.random() * 1200),
-      lithology: "Fissured Shale & Weathered Siltstone",
-      road: "Strategic Valley Connector",
-      roadStatus: simulatedSusc > 75 ? "CLOSED" : "RESTRICTED",
-      faultDistanceKm: Number((1.8 + Math.random() * 5).toFixed(1)),
-      polygon: [
-        [latitude + 0.05, longitude - 0.05], [latitude + 0.06, longitude + 0.05],
-        [latitude - 0.04, longitude + 0.04], [latitude - 0.05, longitude - 0.04]
-      ]
-    };
-    setRegions(prev => [newSector, ...prev]);
-    setSelectedRegion(newSector);
-    logActionToDatabase(`PIN_LOCATION_${name}`, { lat: latitude, lng: longitude });
-    setNewLocName(""); setNewLat(""); setNewLng("");
-  };
-
-  const triggerSiren = () => {
-    setSirenActive(true);
-    logActionToDatabase("EVACUATION_SIREN_TRIGGERED");
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(`Critical Danger. Landslide threat index reached ${calculatedRisk} percent for ${selectedRegion.name}. Initiating citizen evacuation protocol.`);
-      utterance.rate = 0.95;
-      window.speechSynthesis.speak(utterance);
-    }
-  };
-
-  return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#070d18] text-slate-200 font-sans text-xs select-none">
-      
-      {showFieldView && <FieldReporter onBack={() => setShowFieldView(false)} onReportSubmitted={(rep) => handleAddNewLocation(rep.lat, rep.lng, rep.name)} />}
-
-      {/* RESEARCH CITATIONS & ACTION MODALS */}
-      {modalState && (
-        <div className="fixed inset-0 z-[1000] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0b1426] border border-cyan-500/40 rounded-xl p-5 max-w-xl w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
-            <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                {modalState === 'PAPERS' && <BookOpen className="w-4 h-4 text-cyan-400" />}
-                {modalState === 'NDRF' && <PhoneCall className="w-4 h-4 text-cyan-400" />}
-                {modalState === 'SHELTERS' && <ShieldCheck className="w-4 h-4 text-emerald-400" />}
-                {modalState === 'PAPERS' ? "Research Citations & Geomorphological Datasets" : modalState === 'NDRF' ? "NDRF Tactical Command Uplink" : "Safe Corridors & Shelters"}
-              </h3>
-              <button onClick={() => setModalState(null)} className="text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
-            </div>
-
-            {modalState === 'PAPERS' && (
-              <div className="space-y-3 text-slate-300 text-[11px] max-h-[360px] overflow-y-auto pr-1">
-                <p className="text-cyan-400 font-semibold">Underlying Datasets and Academic Peer-Reviewed Literature:</p>
-                <div className="p-2.5 bg-[#070d18] rounded border border-slate-800 space-y-1">
-                  <p className="font-bold text-white">1. National Landslide Susceptibility Mapping (NLSM)</p>
-                  <p className="text-slate-400 text-[10px]">Geological Survey of India (GSI), Ministry of Mines, Govt. of India.</p>
-                </div>
-                <div className="p-2.5 bg-[#070d18] rounded border border-slate-800 space-y-1">
-                  <p className="font-bold text-white">2. High-Resolution Indian Landslide Susceptibility Model (ILSM 100m)</p>
-                  <p className="text-slate-400 text-[10px]">Mathew et al., Indian Institute of Technology Delhi (IIT-D).</p>
-                </div>
-                <button onClick={() => setModalState(null)} className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 font-bold text-white rounded-lg">Close</button>
-              </div>
-            )}
-
-            {modalState === 'NDRF' && (
-              <div className="space-y-3 text-slate-300 text-[11px]">
-                <p>Generating tactical CAP payload for <strong>NDRF 1st & 12th Battalions</strong>:</p>
-                <div className="bg-[#070d18] p-3 rounded font-mono text-[10px] space-y-1 text-cyan-300 border border-slate-800">
-                  <p>• SECTOR: {selectedRegion.name} ({selectedRegion.state})</p>
-                  <p>• GPS COORD: {selectedRegion.lat.toFixed(4)}°N, {selectedRegion.lng.toFixed(4)}°E</p>
-                  <p>• THREAT: {calculatedRisk} / 100 (CRITICAL LEVEL)</p>
-                  <p>• PORE PRESSURE: {selectedSensors.piezo} kPa</p>
-                  <p>• SLOPE TILT: {selectedSensors.tilt}° / hr</p>
-                </div>
-                <button onClick={() => { logActionToDatabase("NDRF_DISPATCH_TRANSMITTED"); alert(`Encrypted CAP dispatch sent to NDRF command center.`); setModalState(null); }} className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-bold rounded-lg">
-                  Transmit Encrypted Dispatch & Log to Atlas
-                </button>
-              </div>
-            )}
-
-            {modalState === 'SHELTERS' && (
-              <div className="space-y-2 text-slate-300 text-[11px]">
-                <div className="p-2.5 bg-[#070d18] rounded border border-emerald-900/60 flex justify-between items-center">
-                  <div>
-                    <p className="font-bold text-white">High Elevation Relief Camp Alpha</p>
-                    <p className="text-[10px] text-slate-400">Dist: 3.4 km • Beyond debris flow runout path</p>
-                  </div>
-                  <span className="text-emerald-400 font-bold">Cap: 450 / 800</span>
-                </div>
-                <button onClick={() => setModalState(null)} className="w-full py-2 bg-emerald-600 font-bold text-white rounded-lg">Close</button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* LEFT NAVIGATION BAR */}
-      <aside className="w-56 bg-[#0a1120] border-r border-slate-800 flex flex-col justify-between p-3 shrink-0">
-        <div>
-          <div className="flex items-center gap-2.5 pb-4 border-b border-slate-800/80">
-            <div className="p-2 bg-emerald-500/10 border border-emerald-500/30 rounded-lg">
-              <Radio className="w-4 h-4 text-emerald-400 animate-pulse" />
-            </div>
-            <div>
-              <h1 className="font-black text-sm tracking-wider uppercase text-white">BHUSAKTHI AI</h1>
-              <p className="text-[10px] text-slate-400">GSI / ILSM Spatial Node</p>
-            </div>
-          </div>
-
-          <nav className="mt-4 space-y-1">
-            {[
-              { label: 'Dashboard', key: 'DASHBOARD', icon: MapPin },
-              { label: 'Road Connectivity', key: 'ROADS', icon: Navigation },
-              { label: 'Alerts Broadcast', key: 'ALERTS', icon: Bell },
-              { label: 'Ground Sensors', key: 'SENSORS', icon: Activity }
-            ].map((item) => (
-              <button
-                key={item.key}
-                onClick={() => { setActiveTab(item.key); logActionToDatabase(`VIEW_TAB_${item.key}`); }}
-                className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium transition text-left ${activeTab === item.key ? "bg-[#14233c] text-cyan-400 border border-cyan-500/30 font-bold" : "text-slate-400 hover:bg-[#0f192b] hover:text-slate-200"}`}
-              >
-                <item.icon className="w-3.5 h-3.5" /> <span>{item.label}</span>
-              </button>
-            ))}
-            <button onClick={() => { setModalState('PAPERS'); logActionToDatabase("VIEW_RESEARCH_PAPERS"); }} className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg font-medium text-purple-400 hover:bg-[#19152e] transition text-left">
-              <BookOpen className="w-3.5 h-3.5" /> <span>Research Citations</span>
-            </button>
-          </nav>
-        </div>
-
-        {/* Dynamic Location Add Form */}
-        <div className="bg-[#0f1a2e] border border-slate-800 p-2.5 rounded-lg space-y-2">
-          <p className="text-[10px] text-cyan-400 font-bold flex items-center gap-1"><Plus className="w-3 h-3" /> Track Custom Location</p>
-          <input type="text" placeholder="Place / Village Name" value={newLocName} onChange={(e) => setNewLocName(e.target.value)} className="w-full bg-[#070d18] border border-slate-700 text-[10px] px-2 py-1 rounded text-white" />
-          <div className="flex gap-1">
-            <input type="number" placeholder="Lat (22-29)" value={newLat} onChange={(e) => setNewLat(e.target.value)} className="w-1/2 bg-[#070d18] border border-slate-700 text-[10px] px-1.5 py-1 rounded text-white" />
-            <input type="number" placeholder="Lng (89-96)" value={newLng} onChange={(e) => setNewLng(e.target.value)} className="w-1/2 bg-[#070d18] border border-slate-700 text-[10px] px-1.5 py-1 rounded text-white" />
-          </div>
-          <button onClick={() => { if (newLat && newLng) { handleAddNewLocation(newLat, newLng, newLocName); } else { alert("Enter valid coordinates!"); } }} className="w-full py-1.5 bg-cyan-600 hover:bg-cyan-500 font-bold text-white rounded text-[10px] transition">
-            Deploy Tracking Radar
-          </button>
-          <div className="flex items-center justify-between text-[9px] text-slate-500 pt-1">
-            <span className="flex items-center gap-1"><Database className="w-2.5 h-2.5 text-emerald-400" /> {dbStatus}</span>
-          </div>
-        </div>
-      </aside>
-
-      {/* MAIN CENTER AREA */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
-        
-        {/* Siren Alert Strip */}
-        {sirenActive && (
-          <div className="bg-red-600 text-white px-4 py-2 font-bold flex items-center justify-between animate-pulse shrink-0">
-            <span className="flex items-center gap-2 text-xs"><AlertTriangle className="w-4 h-4" /> EVACUATION SIREN TRANSMITTING TO CITIZEN CELL BROADCAST</span>
-            <button onClick={() => setSirenActive(false)} className="text-xs bg-red-950 px-2 py-0.5 rounded hover:bg-black">Dismiss</button>
-          </div>
-        )}
-
-        {/* Top Status Bar */}
-        <div className="p-3 border-b border-slate-800/80 bg-[#0a1222] flex flex-wrap items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className={`px-2.5 py-1 rounded font-bold flex items-center gap-1.5 border ${selectedSensors.status === 'CRITICAL' ? 'bg-red-950/80 border-red-800 text-red-400' : 'bg-emerald-950/80 border-emerald-800 text-emerald-400'}`}>
-              {selectedSensors.status === 'CRITICAL' ? <AlertTriangle className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-              {selectedSensors.status === 'CRITICAL' ? 'ACTIVE HAZARD ZONE' : 'STABLE SECTOR'}
-            </span>
-            <span className="text-slate-400 text-[11px]">Focus: <strong className="text-white">{selectedRegion.name}</strong> ({selectedRegion.state})</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="bg-[#0f1a2e] border border-red-900/50 px-3 py-1.5 rounded-lg text-center min-w-[70px]">
-              <p className="text-sm font-black text-red-500">{regions.filter(r => generateSensorTelemetry(r, liveRain, liveMoisture).status === 'CRITICAL').length}</p>
-              <p className="text-[9px] text-slate-400 uppercase font-semibold">High Hazard</p>
-            </div>
-            <div className="bg-[#0f1a2e] border border-cyan-900/50 px-3 py-1.5 rounded-lg text-center min-w-[70px]">
-              <p className="text-sm font-black text-cyan-400">{regions.length}</p>
-              <p className="text-[9px] text-slate-400 uppercase font-semibold">Tracked Nodes</p>
-            </div>
-            <button onClick={() => setShowFieldView(true)} className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] flex items-center gap-1.5 transition ml-1">
-              <MapPin className="w-3.5 h-3.5" /> Field App (GPS)
-            </button>
-          </div>
-        </div>
-
-        {/* WORKSPACE VIEWS */}
-        {activeTab === 'ROADS' ? (
-          <div className="p-4 flex-1 flex flex-col gap-3">
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider">Strategic Arterial Corridor Status</h2>
-            <div className="grid grid-cols-2 gap-3 mt-2">
-              {regions.map(r => (
-                <div key={r.id} className="bg-[#0a1222] border border-slate-800 p-3 rounded-xl flex justify-between items-center">
-                  <div>
-                    <p className="font-bold text-white text-xs">{r.road}</p>
-                    <p className="text-slate-400 text-[10px]">Sector: {r.name}</p>
-                  </div>
-                  <button 
-                    onClick={() => { const next = r.roadStatus === 'CLOSED' ? 'RESTRICTED' : r.roadStatus === 'RESTRICTED' ? 'OPEN' : 'CLOSED'; setRegions(prev => prev.map(item => item.id === r.id ? { ...item, roadStatus: next } : item)); logActionToDatabase(`ROAD_STATUS_TOGGLE`, { corridor: r.road, new_status: next }); }}
-                    className={`px-2.5 py-1 rounded text-[10px] font-bold border transition ${r.roadStatus === 'CLOSED' ? 'bg-red-950 text-red-400 border-red-800' : r.roadStatus === 'RESTRICTED' ? 'bg-amber-950 text-amber-400 border-amber-800' : 'bg-emerald-950 text-emerald-400 border-emerald-800'}`}
-                  >{r.roadStatus}</button>
-                </div>
-              ))}
-            </div>
-          </div>
-        ) : activeTab === 'ALERTS' ? (
-          <div className="p-4 flex-1 flex flex-col gap-3">
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider">Automated CAP Emergency Broadcast Feed</h2>
-            <div className="space-y-2 mt-2">
-              {regions.filter(r => generateSensorTelemetry(r, liveRain, liveMoisture).status === 'CRITICAL').map(r => (
-                <div key={r.id} className="bg-[#0a1222] border border-slate-800 p-3 rounded-xl flex justify-between items-center border-l-4 border-l-red-500">
-                  <div>
-                    <p className="font-bold text-red-400 text-xs">CRITICAL WARNING: {r.name}</p>
-                    <p className="text-slate-400 text-[10px]">Sustained slope gradient ({r.slope}°) exceeding shear threshold due to saturation. Evacuate valley downstream.</p>
-                  </div>
-                  <button onClick={() => { logActionToDatabase("BROADCAST_ALERT", { sector: r.name }); alert(`Broadcast transmitted for ${r.name}`); }} className="px-3 py-1.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-[10px]">
-                    Broadcast to Citizen SMS
-                  </button>
-                </div>
-              ))}
-              {regions.filter(r => generateSensorTelemetry(r, liveRain, liveMoisture).status !== 'CRITICAL').length === regions.length && (
-                <div className="p-4 bg-[#0a1222] border border-slate-800 rounded-xl text-slate-400 text-center">No critical broadcast events currently active.</div>
-              )}
-            </div>
-          </div>
-        ) : activeTab === 'SENSORS' ? (
-          <div className="p-4 flex-1 flex flex-col gap-3">
-            <h2 className="text-sm font-bold text-white uppercase tracking-wider flex justify-between">
-              <span>Geotechnical Borehole Sensor Array</span>
-              <span className="text-[10px] text-cyan-400 font-mono tracking-normal bg-[#0f1a2e] px-2 py-1 rounded border border-slate-800">GLOBAL PARAMETERS: {liveRain}mm Rain / {liveMoisture}% Saturation</span>
-            </h2>
-            <div className="grid grid-cols-3 gap-3 mt-2">
-              {regions.map(r => {
-                const sensors = generateSensorTelemetry(r, liveRain, liveMoisture);
-                return (
-                  <div key={r.id} className={`bg-[#0a1222] border-t-2 border-slate-800 border-x border-b p-3 rounded-xl space-y-2 ${sensors.status === 'CRITICAL' ? 'border-t-red-500 bg-red-950/10' : sensors.status === 'WARNING' ? 'border-t-amber-500' : 'border-t-emerald-500'}`}>
-                    <div className="flex justify-between items-start">
-                      <p className="font-bold text-white text-xs pr-2">{r.name}</p>
-                      <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${sensors.status === 'CRITICAL' ? 'bg-red-950 text-red-400' : sensors.status === 'WARNING' ? 'bg-amber-950 text-amber-400' : 'bg-emerald-950 text-emerald-400'}`}>{sensors.status}</span>
-                    </div>
-                    <div className="text-[10px] space-y-1.5 text-slate-300 bg-[#0f1a2e] p-2 rounded border border-slate-800/50">
-                      <p className="flex justify-between">Piezometer: <span className={`font-mono font-bold ${sensors.colorClass}`}>{sensors.piezo} kPa</span></p>
-                      <p className="flex justify-between">Tilt Inclinometer: <span className={`font-mono font-bold ${sensors.colorClass}`}>±{sensors.tilt}°/hr</span></p>
-                      <p className="flex justify-between">Geophone Vibration: <span className={`font-mono font-bold ${sensors.colorClass}`}>{sensors.geo} mm/s²</span></p>
-                    </div>
-                    <button onClick={() => { setSelectedRegion(r); setActiveTab('DASHBOARD'); }} className="w-full py-1.5 bg-[#14233c] hover:bg-[#1a2d4f] text-cyan-400 border border-cyan-500/20 rounded text-[10px] font-bold transition">
-                      View on Main Map
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ) : (
-          /* STANDARD DASHBOARD */
-          <div className="flex-1 p-3 grid grid-cols-12 gap-3 min-h-0">
-            
-            <div className="col-span-5 flex flex-col gap-3">
-              <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px] flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-cyan-400" /> Terrain Intelligence</span>
-                  <div className="flex items-center gap-1.5">
-                    <button onClick={() => { setView3D(!view3D); logActionToDatabase("TOGGLE_3D_VIEW"); }} className={`px-2 py-0.5 rounded text-[10px] font-bold border transition flex items-center gap-1 ${view3D ? "bg-cyan-600 text-white border-cyan-400" : "bg-[#14233c] text-slate-400 border-slate-700"}`}>
-                      <Box className="w-3 h-3" /> {view3D ? "Return to Map" : "3D Terrain"}
-                    </button>
-                    <select value={selectedRegion.id} onChange={(e) => { const reg = regions.find(r => r.id === e.target.value); setSelectedRegion(reg); logActionToDatabase("REGION_CHANGED", { region: reg.name }); }} className="bg-[#14233c] border border-slate-700 text-[10px] text-slate-300 rounded px-1.5 py-0.5">
-                      {regions.map(r => (<option key={r.id} value={r.id}>{r.name}</option>))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="relative flex-1 rounded-lg overflow-hidden border border-slate-800 bg-[#050912] min-h-[280px]">
-                  {view3D ? (
-                    <Terrain3D regionName={selectedRegion.name} riskScore={calculatedRisk} slopeAngle={selectedRegion.slope} />
-                  ) : (
-                    <MapContainer center={[selectedRegion.lat, selectedRegion.lng]} zoom={9} className="h-full w-full" scrollWheelZoom={true} zoomControl={false}>
-                      <MapController center={[selectedRegion.lat, selectedRegion.lng]} zoomAction={zoomTrigger} />
-                      <MapClickHandler onLocationAdd={(lat, lng) => handleAddNewLocation(lat, lng)} />
-                      <TileLayer url="https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}" attribution="&copy; Google Maps" maxZoom={20} />
-                      <Circle center={[selectedRegion.lat, selectedRegion.lng]} radius={scanRadiusKm * 1000} pathOptions={{ color: '#06b6d4', fillColor: '#06b6d4', fillOpacity: 0.12, dashArray: '4, 6' }} />
-                      
-                      {regions.map(r => {
-                        const isDanger = generateSensorTelemetry(r, liveRain, liveMoisture).status === 'CRITICAL';
-                        return (
-                          <Polygon key={`poly-${r.id}`} positions={r.polygon} pathOptions={{ color: isDanger ? '#ef4444' : '#f59e0b', fillColor: isDanger ? '#ef4444' : '#f59e0b', fillOpacity: 0.40, weight: 1.5, dashArray: '3, 4' }} />
-                        )
-                      })}
-
-                      {regions.map((r) => {
-                        const isTarget = r.id === selectedRegion.id;
-                        const isDanger = generateSensorTelemetry(r, liveRain, liveMoisture).status === 'CRITICAL';
-                        return (
-                          <CircleMarker key={r.id} center={[r.lat, r.lng]} radius={isTarget ? 11 : 6} pathOptions={{ color: isDanger ? '#ef4444' : '#10b981', fillColor: isDanger ? '#ef4444' : '#10b981', fillOpacity: 0.95 }} eventHandlers={{ click: () => { setSelectedRegion(r); logActionToDatabase("PIN_SELECTED", { selected: r.name }); } }}>
-                            <Popup><div className="text-slate-900 text-[11px] font-sans"><p className="font-bold">{r.name}</p><p>Slope: {r.slope}° • Lithology: {r.lithology}</p></div></Popup>
-                          </CircleMarker>
-                        );
-                      })}
-                    </MapContainer>
-                  )}
-
-                  <div className="absolute top-2 right-2 flex flex-col gap-1 z-[400]">
-                    <button onClick={() => { setZoomTrigger('IN'); setTimeout(() => setZoomTrigger(null), 100); }} className="p-1.5 bg-[#0a1222]/90 border border-slate-700 hover:bg-slate-700 rounded text-cyan-400"><ZoomIn className="w-3.5 h-3.5" /></button>
-                    <button onClick={() => { setZoomTrigger('OUT'); setTimeout(() => setZoomTrigger(null), 100); }} className="p-1.5 bg-[#0a1222]/90 border border-slate-700 hover:bg-slate-700 rounded text-cyan-400"><ZoomOut className="w-3.5 h-3.5" /></button>
-                  </div>
-                  <div className="absolute top-2 left-2 bg-[#0a1222]/90 backdrop-blur border border-slate-700/80 p-2 rounded text-[10px] pointer-events-none z-[400] space-y-0.5">
-                    <p className="font-bold text-cyan-400">● {scanRadiusKm} km Radar Active</p>
-                    <p className="text-slate-300">Click map to drop custom sensor</p>
-                  </div>
-                </div>
-
-                <div className="mt-2 bg-[#0f1a2e] border border-slate-800 p-2 rounded-lg flex justify-between items-center text-[11px]">
-                  <div>
-                    <p className="text-[9px] text-slate-400 uppercase font-bold">Lifeline Artery</p>
-                    <p className="font-medium text-slate-200">{selectedRegion.road}</p>
-                  </div>
-                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${selectedRegion.roadStatus === 'CLOSED' ? 'bg-red-950 text-red-400 border border-red-800' : 'bg-amber-950 text-amber-400 border border-amber-800'}`}>{selectedRegion.roadStatus}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="col-span-4 flex flex-col gap-3">
-              <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px]">Saturation Matrix</span>
-                  <span className="text-[10px] text-cyan-400 font-mono bg-[#0f1a2e] px-2 py-0.5 rounded border border-slate-800">{selectedRegion.name.slice(0, 18)}...</span>
-                </div>
-
-                <div className="grid grid-cols-4 gap-1.5 my-2 text-center">
-                  <div className="bg-[#0f1a2e] p-1.5 rounded border border-slate-800">
-                    <p className="text-[9px] text-slate-400">Rainfall</p><p className="font-bold text-cyan-400">{liveRain} mm</p>
-                    <input type="range" min="0" max="250" value={liveRain} onChange={(e) => setLiveRain(Number(e.target.value))} className="w-full accent-cyan-400 cursor-pointer h-1" />
-                  </div>
-                  <div className="bg-[#0f1a2e] p-1.5 rounded border border-slate-800">
-                    <p className="text-[9px] text-slate-400">Saturation</p><p className="font-bold text-amber-400">{liveMoisture}%</p>
-                    <input type="range" min="0" max="100" value={liveMoisture} onChange={(e) => setLiveMoisture(Number(e.target.value))} className="w-full accent-amber-400 cursor-pointer h-1" />
-                  </div>
-                  <div className="bg-[#0f1a2e] p-1.5 rounded border border-slate-800">
-                    <p className="text-[9px] text-slate-400">Slope</p><p className="font-bold text-slate-200 mt-1">{selectedRegion.slope}°</p>
-                  </div>
-                  <div className={`bg-[#0f1a2e] p-1.5 rounded border border-slate-800 ${selectedSensors.status === 'CRITICAL' ? 'border-red-900 bg-red-950/20' : ''}`}>
-                    <p className="text-[9px] text-slate-400">Threat</p><p className={`font-bold mt-1 ${selectedSensors.colorClass}`}>{calculatedRisk}/100</p>
-                  </div>
-                </div>
-
-                <div className="flex-1 w-full min-h-[110px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={FORECAST_DATA}>
-                      <XAxis dataKey="time" stroke="#475569" fontSize={9} />
-                      <YAxis stroke="#475569" fontSize={9} domain={[0, 150]} />
-                      <Tooltip contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', fontSize: '10px' }} />
-                      <Line type="monotone" dataKey="threat" stroke="#ef4444" strokeWidth={2} dot={{ r: 2 }} />
-                      <Line type="monotone" dataKey="rain" stroke="#06b6d4" strokeWidth={1.5} strokeDasharray="3 3" />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col justify-between">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="font-bold uppercase tracking-wider text-slate-300 text-[11px] flex items-center gap-1"><Radar className="w-3.5 h-3.5 text-cyan-400" /> Radar ({scanRadiusKm} km)</span>
-                  <select value={scanRadiusKm} onChange={(e) => setScanRadiusKm(Number(e.target.value))} className="bg-[#070d18] text-cyan-400 border border-slate-800 text-[10px] rounded px-1">
-                    <option value={15}>15 km</option><option value={25}>25 km</option><option value={50}>50 km</option>
-                  </select>
-                </div>
-
-                <div className="space-y-1.5 overflow-y-auto max-h-[120px] pr-1">
-                  {proximateDangers.length === 0 ? (
-                    <div className="p-2 bg-[#0f1a2e] rounded text-[10px] text-slate-400 text-center">No critical shear planes within {scanRadiusKm} km.</div>
-                  ) : (
-                    proximateDangers.map(d => {
-                      const dSensors = generateSensorTelemetry(d, liveRain, liveMoisture);
-                      return (
-                        <div key={d.id} className="p-1.5 bg-[#0f1a2e] rounded border border-slate-800 flex justify-between items-center text-[10px]">
-                          <div>
-                            <p className="font-bold text-white">{d.name.slice(0, 22)}...</p>
-                            <p className="text-[9px] text-slate-400">Dist: {d.distance} km • Slp: {d.slope}°</p>
-                          </div>
-                          <span className={`px-1.5 py-0.5 rounded font-bold text-[9px] ${dSensors.status === 'CRITICAL' ? 'text-red-400 bg-red-950' : 'text-amber-400 bg-amber-950'}`}>
-                            {d.baseSusceptibility}% RISK
-                          </span>
-                        </div>
-                      )
-                    })
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="col-span-3 flex flex-col gap-3">
-              <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex-1 flex flex-col justify-between">
-                <div className="flex justify-between items-center mb-1.5">
-                  <span className="font-bold uppercase tracking-wider text-slate-300 text-[10px]">Geomorphology & Sensors</span>
-                  <span className={`text-[9px] font-mono animate-pulse ${selectedSensors.status === 'CRITICAL' ? 'text-red-400' : 'text-emerald-400'}`}>● 10Hz TELEMETRY</span>
-                </div>
-                <div className="space-y-1.5 text-[10px]">
-                  <div className="p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
-                    <span className="text-slate-400 block text-[9px]">Lithology Formation</span>
-                    <span className="text-purple-300 font-bold">{selectedRegion.lithology}</span>
-                  </div>
-                  <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
-                    <span className="text-slate-400">Nearest Fault</span>
-                    <span className="text-slate-200 font-mono font-bold">{selectedRegion.faultDistanceKm} km</span>
-                  </div>
-                  <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
-                    <span className="text-slate-400">Pore Pressure (Piezo)</span>
-                    <span className={`font-mono font-bold ${selectedSensors.colorClass}`}>{selectedSensors.piezo} kPa</span>
-                  </div>
-                  <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
-                    <span className="text-slate-400">Slope Inclinometer</span>
-                    <span className={`font-mono font-bold ${selectedSensors.colorClass}`}>±{selectedSensors.tilt}° / hr</span>
-                  </div>
-                  <div className="flex justify-between p-1.5 bg-[#0f1a2e] rounded border border-slate-800/80">
-                    <span className="text-slate-400">Acoustic Vibration</span>
-                    <span className={`font-mono font-bold ${selectedSensors.colorClass}`}>{selectedSensors.geo} mm/s²</span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-[#0a1222] border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
-                <p className="font-bold text-slate-400 uppercase text-[9px]">Emergency Response Actions</p>
-                <div className="grid grid-cols-3 gap-1.5">
-                  <button onClick={triggerSiren} className="bg-red-600 hover:bg-red-500 text-white p-2 rounded-lg font-bold text-[10px] flex flex-col items-center justify-center gap-1 transition shadow-lg shadow-red-950/50">
-                    <Volume2 className="w-3.5 h-3.5" /> Siren
-                  </button>
-                  <button onClick={() => { setModalState('NDRF'); logActionToDatabase("OPEN_NDRF_MODAL"); }} className="bg-cyan-600 hover:bg-cyan-500 text-white p-2 rounded-lg font-bold text-[10px] flex flex-col items-center justify-center gap-1 transition shadow-lg shadow-cyan-950/50">
-                    <PhoneCall className="w-3.5 h-3.5" /> NDRF
-                  </button>
-                  <button onClick={() => { setModalState('SHELTERS'); logActionToDatabase("OPEN_SHELTERS_MODAL"); }} className="bg-emerald-600 hover:bg-emerald-500 text-white p-2 rounded-lg font-bold text-[10px] flex flex-col items-center justify-center gap-1 transition shadow-lg shadow-emerald-950/50">
-                    <ShieldCheck className="w-3.5 h-3.5" /> Shelters
-                  </button>
-                </div>
-              </div>
-            </div>
-
-          </div>
-        )}
-
-      </main>
+ const tabs=[['COMMAND','Command'],['GIS','Live GIS'],['WARNING','Early Warning'],['INCIDENTS','Incidents'],['RESPONSE','Response'],['ANALYTICS','Analytics']];
+ return <div className="h-screen w-screen overflow-hidden bg-[#050a13] text-slate-200 text-xs font-sans">
+  {field&&<FieldReporter onBack={()=>setField(false)} onReportSubmitted={submitReport}/>} 
+  {siren&&<div className="fixed inset-0 z-[3000] bg-red-950/90 backdrop-blur flex items-center justify-center p-6"><div className="max-w-md w-full text-center panel border-red-500 p-7"><div className="mx-auto w-16 h-16 rounded-full bg-red-500/20 flex items-center justify-center animate-pulse"><Siren className="w-8 h-8 text-red-400"/></div><h2 className="text-2xl font-black text-red-300 mt-4">EVACUATION WARNING</h2><p className="text-slate-300 mt-2">{selected.name}</p><p className="text-5xl font-black text-white mt-3">{score}<span className="text-xl">/100</span></p><p className="text-red-300 text-[10px] uppercase tracking-widest mt-2">Risk threshold exceeded</p><button onClick={()=>setSiren(false)} className="mt-6 px-5 py-2 bg-red-600 rounded-lg font-bold">ACKNOWLEDGE</button></div></div>}
+  <header className="h-14 border-b border-slate-800 bg-[#080f1d] flex items-center justify-between px-4 gap-4">
+   <div className="flex items-center gap-3 min-w-0"><div className="w-9 h-9 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center"><Activity className="w-5 h-5 text-cyan-400"/></div><div className="min-w-0"><h1 className="font-black tracking-widest text-white text-sm">BHUSAKTHI</h1><p className="muted text-[8px] uppercase tracking-[.25em] truncate">AI Landslide Early Warning & Response · NER</p></div></div>
+   <div className="hidden md:flex items-center gap-1">{tabs.map(([id,name])=><button key={id} onClick={()=>setTab(id)} className={`px-3 py-2 rounded-md text-[9px] font-bold uppercase tracking-wider ${tab===id?'bg-cyan-500/15 text-cyan-300':'text-slate-500 hover:text-white'}`}>{name}</button>)}</div>
+   <div className="flex items-center gap-2"><button onClick={()=>setLang(lang==='EN'?'HI':'EN')} className="px-2 py-1 border border-slate-700 rounded text-[9px]">{lang}</button><span className={`hidden sm:flex items-center gap-1 text-[9px] ${notice.includes('UNAVAILABLE')?'text-amber-400':'text-emerald-400'}`}><span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse"/>{notice||'CONNECTING'}</span><button onClick={load} className="p-2 hover:bg-slate-800 rounded"><RefreshCw className={`w-4 h-4 ${loading?'animate-spin':''}`}/></button></div>
+  </header>
+  <div className="md:hidden h-9 border-b border-slate-800 flex gap-1 overflow-x-auto px-2 items-center">{tabs.map(([id,name])=><button key={id} onClick={()=>setTab(id)} className={`px-2 py-1 text-[8px] whitespace-nowrap ${tab===id?'text-cyan-300 border-b border-cyan-400':'text-slate-500'}`}>{name}</button>)}</div>
+  <main className="h-[calc(100vh-56px)] overflow-auto p-3 md:p-4">
+   {tab==='COMMAND'&&<>
+    <div className="grid grid-cols-2 lg:grid-cols-5 gap-2 mb-3"><Stat icon={AlertTriangle} label="Critical zones" value={critical} sub="Immediate attention" tone="red"/><Stat icon={TrendingUp} label="High risk zones" value={high} sub="Enhanced monitoring" tone="amber"/><Stat icon={FileWarning} label="Active incidents" value={incidents.filter(i=>i.status!=='RESOLVED').length||2} sub="Field + system reports"/><Stat icon={Radio} label="Sensors online" value={summary?.sensors_online||12} sub="Telemetry channels"/><Stat icon={Navigation} label="Roads impacted" value={summary?.roads_impacted||4} sub="Closed / restricted" tone="amber"/></div>
+    <div className="grid xl:grid-cols-[1.6fr_1fr] gap-3">
+     <section className="panel overflow-hidden"><div className="px-3 py-2 border-b border-slate-800 flex items-center justify-between"><div><h2 className="font-bold text-white">Regional Risk Map</h2><p className="muted text-[9px]">GIS risk layers · field observations · road connectivity</p></div><Badge>{regions.length} MONITORED ZONES</Badge></div><div className="h-[330px] md:h-[430px] relative"><MapContainer center={[25.7,92.8]} zoom={6} scrollWheelZoom className="h-full w-full"><TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/><FlyTo region={selected}/>{regions.map(r=>{const s=r.risk_score??riskScore(r);return <React.Fragment key={r.id}><Polygon positions={[[r.lat+.12,r.lng-.12],[r.lat+.12,r.lng+.12],[r.lat-.12,r.lng+.12],[r.lat-.12,r.lng-.12]]} pathOptions={{color:s>=75?'#ef4444':s>=55?'#f59e0b':'#10b981',fillOpacity:.12,weight:1}}/><CircleMarker center={[r.lat,r.lng]} radius={s>=75?11:8} pathOptions={{color:s>=75?'#ef4444':s>=55?'#f59e0b':'#10b981',fillColor:s>=75?'#ef4444':s>=55?'#f59e0b':'#10b981',fillOpacity:.7}} eventHandlers={{click:()=>setSelected(r)}}><Popup><b>{r.name}</b><br/>Risk: {s}/100<br/>{r.road}: {r.road_status}</Popup></CircleMarker></React.Fragment>})}</MapContainer><div className="absolute top-3 left-3 z-[500] panel px-3 py-2 pointer-events-none"><p className="text-[8px] text-cyan-300 font-bold">LIVE GIS / RISK OVERLAY</p><p className="text-[8px] muted">OpenStreetMap base · demo risk fusion</p></div></div></section>
+     <div className="space-y-3"><section className="panel p-4"><div className="flex justify-between"><div><p className="muted text-[9px] uppercase tracking-widest">Selected hazard zone</p><h2 className="text-base font-black text-white mt-1">{selected.name}</h2><p className="muted mt-1">{selected.district}, {selected.state}</p></div><Badge critical={score>=75}>{level}</Badge></div><div className="flex items-end gap-4 mt-5"><div><span className={`text-5xl font-black ${riskClass(score)}`}>{score}</span><span className="muted"> / 100</span></div><div className="flex-1 pb-2"><div className="h-2 bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-current rounded-full" style={{width:`${score}%`}}/></div><p className="muted text-[9px] mt-2">Weighted fusion of susceptibility, rainfall, moisture and slope.</p></div></div><div className="grid grid-cols-2 gap-2 mt-5"><div className="metric"><CloudRain className="w-3 h-3 text-cyan-400"/><b>135 mm</b><span>rainfall</span></div><div className="metric"><Zap className="w-3 h-3 text-amber-400"/><b>84%</b><span>soil moisture</span></div><div className="metric"><TrendingUp className="w-3 h-3 text-red-400"/><b>{selected.slope}°</b><span>slope</span></div><div className="metric"><Layers className="w-3 h-3 text-violet-400"/><b>{selected.elevation}m</b><span>elevation</span></div></div></section>
+      <section className="panel p-3"><div className="flex justify-between items-center mb-2"><div><h3 className="font-bold text-white">Weather-linked risk forecast</h3><p className="muted text-[9px]">Next operational window</p></div><CloudRain className="w-4 h-4 text-cyan-400"/></div><div className="h-[150px]"><ResponsiveContainer width="100%" height="100%"><LineChart data={forecast}><CartesianGrid strokeDasharray="3 3" stroke="#1e293b"/><XAxis dataKey="time" tick={{fontSize:8,fill:'#64748b'}}/><YAxis domain={[0,100]} tick={{fontSize:8,fill:'#64748b'}}/><Tooltip contentStyle={{background:'#0b1424',border:'1px solid #243244',fontSize:10}}/><Line type="monotone" dataKey="risk" stroke="#22d3ee" strokeWidth={2.5} dot={false}/></LineChart></ResponsiveContainer></div></section>
+      <div className="grid grid-cols-2 gap-2"><button onClick={triggerSiren} className="action danger"><Siren className="w-4 h-4"/>Issue warning</button><button onClick={()=>setField(true)} className="action"><Smartphone className="w-4 h-4"/>Field report</button></div></div>
     </div>
-  );
+    <div className="grid lg:grid-cols-3 gap-3 mt-3"><section className="panel p-3"><h3 className="font-bold text-white mb-3">Emergency prioritisation</h3>{(summary?.priority||[{label:'Bhalukpong - Bomdila',score:92,action:'Evacuate / close corridor'},{label:'Sairang - Aizawl',score:83,action:'Deploy field team'},{label:'Cherrapunji - Mawsynram',score:76,action:'Traffic restriction'}]).map((x,i)=><div key={x.label} className="flex items-center gap-2 py-2 border-b border-slate-800 last:border-0"><span className="text-slate-600 font-mono">0{i+1}</span><div className="flex-1"><p className="font-semibold text-slate-200 text-[10px]">{x.label}</p><p className="muted text-[9px]">{x.action}</p></div><b className={riskClass(x.score)}>{x.score}</b></div>)}</section><section className="panel p-3"><h3 className="font-bold text-white mb-3">Connectivity</h3>{regions.map(r=><button key={r.id} onClick={()=>setSelected(r)} className="w-full flex justify-between items-center py-2 border-b border-slate-800 last:border-0"><span className="text-left"><b className="text-[10px]">{r.road}</b><small className="block muted">{r.district}</small></span><span className={`text-[9px] font-black ${r.road_status==='CLOSED'?'text-red-400':'text-amber-400'}`}>{r.road_status}</span></button>)}</section><section className="panel p-3"><h3 className="font-bold text-white mb-3">Response readiness</h3><div className="space-y-3"><Ready label="Sensor network" value="12 / 12 online"/><Ready label="District coordination" value="READY"/><Ready label="Field reporting" value="GPS + media"/><Ready label="Warning channel" value="Browser demo"/></div></section></div>
+   </>}
+   {tab==='GIS'&&<div className="grid lg:grid-cols-[1fr_300px] gap-3"><section className="panel h-[calc(100vh-100px)] overflow-hidden"><MapContainer center={[25.7,92.8]} zoom={6} scrollWheelZoom className="h-full w-full"><TileLayer attribution="&copy; OpenStreetMap contributors" url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>{regions.map(r=>{const s=r.risk_score??riskScore(r);return <CircleMarker key={r.id} center={[r.lat,r.lng]} radius={10} pathOptions={{color:s>=75?'#ef4444':s>=55?'#f59e0b':'#10b981',fillOpacity:.7}} eventHandlers={{click:()=>setSelected(r)}}><Popup>{r.name}<br/>Risk {s}/100</Popup></CircleMarker>})}</MapContainer></section><section className="space-y-2">{regions.map(r=><button onClick={()=>setSelected(r)} key={r.id} className={`panel p-3 w-full text-left ${selected.id===r.id?'border-cyan-500/50':''}`}><div className="flex justify-between"><b>{r.name}</b><span className={riskClass(riskScore(r))}>{riskScore(r)}</span></div><p className="muted mt-1">{r.state} · {r.road} · {r.road_status}</p></button>)}<div className="panel p-3"><p className="font-bold">Map layers</p><p className="muted mt-2">● Risk zones · ● Field reports · Road connectivity · Terrain/slope attributes</p></div></section></div>}
+   {tab==='WARNING'&&<WarningPanel forecast={forecast} selected={selected} score={score} onWarn={triggerSiren}/>} 
+   {tab==='INCIDENTS'&&<IncidentPanel incidents={incidents} onField={()=>setField(true)} onRefresh={load}/>} 
+   {tab==='RESPONSE'&&<ResponsePanel selected={selected} score={score} onWarn={triggerSiren} onLog={logAction}/>} 
+   {tab==='ANALYTICS'&&<AnalyticsPanel regions={regions} forecast={forecast}/>} 
+  </main>
+ </div>
 }
+function Ready({label,value}){return <div className="flex items-center justify-between"><span className="muted">{label}</span><span className="text-emerald-400 font-bold text-[9px] flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/>{value}</span></div>}
+function WarningPanel({forecast,selected,score,onWarn}){return <div className="max-w-5xl mx-auto space-y-3"><section className="panel p-5"><div className="flex flex-col md:flex-row md:justify-between gap-4"><div><Badge critical={score>=75}>EARLY WARNING ENGINE</Badge><h2 className="text-2xl font-black text-white mt-3">{score >=75?'CRITICAL LANDSLIDE WATCH':'ENHANCED MONITORING'}</h2><p className="muted mt-2">{selected.name} · {selected.district}, {selected.state}</p></div><div className="text-left md:text-right"><p className={`text-5xl font-black ${riskClass(score)}`}>{score}</p><p className="muted">current risk index</p></div></div><div className="grid md:grid-cols-3 gap-3 mt-5"><div className="metric"><CloudRain/><b>135 mm</b><span>rainfall signal</span></div><div className="metric"><Zap/><b>84%</b><span>soil saturation proxy</span></div><div className="metric"><TrendingUp/><b>{selected.slope}°</b><span>terrain slope</span></div></div></section><section className="panel p-4"><h3 className="font-bold text-white">Risk escalation curve</h3><div className="h-72 mt-3"><ResponsiveContainer><LineChart data={forecast}><CartesianGrid strokeDasharray="3 3" stroke="#1e293b"/><XAxis dataKey="time"/><YAxis/><Tooltip contentStyle={{background:'#0b1424',border:'1px solid #243244'}}/><Line dataKey="rain" name="Rainfall" stroke="#60a5fa" strokeWidth={2} dot={false}/><Line dataKey="risk" name="Risk" stroke="#f43f5e" strokeWidth={3} dot={false}/></LineChart></ResponsiveContainer></div></section><button onClick={onWarn} className="w-full action danger py-4"><Bell className="w-5 h-5"/>Broadcast evacuation warning</button></div>}
+function IncidentPanel({incidents,onField,onRefresh}){return <div className="max-w-6xl mx-auto"><div className="flex justify-between mb-3"><div><h2 className="text-xl font-black text-white">Incident Management</h2><p className="muted">Geo-tagged citizen and field-officer reports</p></div><div className="flex gap-2"><button onClick={onRefresh} className="action"><RefreshCw className="w-3 h-3"/>Refresh</button><button onClick={onField} className="action danger"><MapPin className="w-3 h-3"/>New report</button></div></div><div className="panel overflow-x-auto"><table className="w-full"><thead><tr className="text-left muted border-b border-slate-800"><th className="p-3">Incident</th><th>Severity</th><th>Location</th><th>Status</th><th>Time</th></tr></thead><tbody>{(incidents.length?incidents:[{id:'INC-DEMO-001',sector_name:'Bhalukpong - Bomdila Corridor',severity:'CRITICAL',lat:27.2645,lng:92.4159,status:'ACTIVE',timestamp:new Date().toISOString()},{id:'INC-DEMO-002',sector_name:'Sairang - Aizawl Syncline',severity:'HIGH',lat:23.7271,lng:92.7176,status:'MONITORING',timestamp:new Date().toISOString()}]).map(i=><tr key={i.id} className="border-b border-slate-800/70"><td className="p-3"><b>{i.sector_name||i.name}</b><small className="block muted">{i.type||'Field observation'}</small></td><td><span className={riskClass(i.severity==='CRITICAL'?90:i.severity==='HIGH'?70:45)}>{i.severity}</span></td><td className="font-mono text-[9px]">{Number(i.lat).toFixed(4)}, {Number(i.lng).toFixed(4)}</td><td><Badge>{i.status}</Badge></td><td className="muted text-[9px]">{new Date(i.timestamp).toLocaleString()}</td></tr>)}</tbody></table></div></div>}
+function ResponsePanel({selected,score,onWarn,onLog}){return <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-3"><section className="panel p-5"><Badge critical={score>=75}>RESPONSE PRIORITY</Badge><h2 className="text-xl font-black text-white mt-3">{selected.name}</h2><p className="muted mt-1">{selected.district}, {selected.state}</p><div className="mt-5 space-y-3"><Ready label="Risk assessment" value={`${score}/100`}/><Ready label="Road control" value={selected.road_status}/><Ready label="Field team" value="DISPATCH READY"/><Ready label="Shelter coordination" value="READY"/></div></section><section className="panel p-5"><h3 className="font-bold text-white">Operational actions</h3><div className="grid gap-2 mt-4"><button onClick={()=>{onLog('NDRF_DISPATCH_REQUESTED');alert('Demo: NDRF dispatch request logged.')}} className="action"><Shield/>Request response team</button><button onClick={()=>{onLog('ROAD_CONTROL_REQUESTED');alert('Demo: road control action logged.')}} className="action"><Navigation/>Restrict affected corridor</button><button onClick={onWarn} className="action danger"><Siren/>Trigger evacuation warning</button><button onClick={()=>alert('Demo safe-corridor view: identify nearest verified shelter from district response database.')} className="action"><Users/>Open safe-corridor plan</button></div></section></div>}
+function AnalyticsPanel({regions,forecast}){return <div className="max-w-6xl mx-auto space-y-3"><section className="grid md:grid-cols-4 gap-2">{regions.map(r=><div className="panel p-3" key={r.id}><p className="muted text-[9px]">{r.state}</p><b className="text-white block mt-1">{r.name}</b><p className={`text-2xl font-black mt-2 ${riskClass(riskScore(r))}`}>{riskScore(r)}</p><span className="muted">risk index</span></div>)}</section><section className="panel p-4"><h2 className="font-bold text-white">7-day operational trend</h2><div className="h-80 mt-3"><ResponsiveContainer><LineChart data={forecast}><CartesianGrid strokeDasharray="3 3" stroke="#1e293b"/><XAxis dataKey="time"/><YAxis/><Tooltip contentStyle={{background:'#0b1424',border:'1px solid #243244'}}/><Line dataKey="risk" stroke="#22d3ee" strokeWidth={3}/><Line dataKey="rain" stroke="#60a5fa" strokeWidth={2}/></LineChart></ResponsiveContainer></div></section><section className="panel p-4"><h3 className="font-bold text-white">AI/ML readiness</h3><p className="muted mt-2">Current implementation uses an explainable weighted risk-fusion baseline. The API is intentionally model-ready for validated ML inference using rainfall, soil moisture, satellite-derived terrain features and historical landslide records. Do not present the baseline as a trained model until model weights and validation metrics are added.</p></section></div>}
